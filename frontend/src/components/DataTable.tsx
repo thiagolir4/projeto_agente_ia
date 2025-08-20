@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 
 interface DataTableProps {
-  data: any[][];
+  data: any[] | any[][];
   columns: string[];
   pageSize?: number;
   className?: string;
@@ -25,11 +25,25 @@ export default function DataTable({
     );
   }
 
+  // Normalizar dados para formato de array
+  const normalizedData = data.map((row) => {
+    if (Array.isArray(row)) {
+      // Se já é um array, usar como está
+      return row;
+    } else if (typeof row === 'object' && row !== null) {
+      // Se é um objeto/dicionário, converter para array baseado nas colunas
+      return columns.map(col => row[col] ?? null);
+    } else {
+      // Fallback para outros tipos
+      return [row];
+    }
+  });
+
   // Calcular paginação
-  const totalPages = Math.ceil(data.length / pageSize);
+  const totalPages = Math.ceil(normalizedData.length / pageSize);
   const startIndex = (currentPage - 1) * pageSize;
   const endIndex = startIndex + pageSize;
-  const currentData = data.slice(startIndex, endIndex);
+  const currentData = normalizedData.slice(startIndex, endIndex);
 
   // Funções de navegação
   const goToPage = (page: number) => {
@@ -63,7 +77,7 @@ export default function DataTable({
           <tbody className="bg-white divide-y divide-gray-200">
             {currentData.map((row, rowIndex) => (
               <tr key={rowIndex} className="hover:bg-gray-50">
-                {row.map((cell, cellIndex) => (
+                {Array.isArray(row) ? row.map((cell, cellIndex) => (
                   <td
                     key={cellIndex}
                     className="px-6 py-4 whitespace-nowrap text-sm text-gray-900"
@@ -74,7 +88,11 @@ export default function DataTable({
                       String(cell)
                     )}
                   </td>
-                ))}
+                )) : (
+                  <td className="px-6 py-4 text-sm text-gray-500">
+                    Dados inválidos
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
@@ -86,8 +104,8 @@ export default function DataTable({
         <div className="flex items-center justify-between px-4 py-3 bg-white border-t border-gray-200 sm:px-6">
           <div className="flex items-center text-sm text-gray-700">
             <span>
-              Mostrando {startIndex + 1} a {Math.min(endIndex, data.length)} de{" "}
-              {data.length} resultados
+              Mostrando {startIndex + 1} a {Math.min(endIndex, normalizedData.length)} de{" "}
+              {normalizedData.length} resultados
             </span>
           </div>
 

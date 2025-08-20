@@ -16,7 +16,7 @@ export default function FinancePage() {
     setTimeout(() => {
       setIsLoading(false);
       alert(
-        "Funcionalidade de consulta financeira será implementada no próximo prompt!"
+        "Funcionalidade de consulta financeira será implementada na próxima atualização!"
       );
     }, 2000);
   };
@@ -70,8 +70,8 @@ export default function FinancePage() {
                 🚧 Em Desenvolvimento
               </h3>
               <p className="text-sm text-yellow-800">
-                A funcionalidade de consulta financeira será implementada no
-                próximo prompt. Esta página está preparada para receber a
+                A funcionalidade de consulta financeira será implementada na
+                próxima atualização. Esta página está preparada para receber a
                 integração com APIs de dados financeiros.
               </p>
             </div>
