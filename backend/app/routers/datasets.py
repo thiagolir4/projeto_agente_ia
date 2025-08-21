@@ -9,12 +9,33 @@ import io
 import csv
 import gzip
 import zipfile
+from collections import Counter
 from app.db import get_duckdb, close_duckdb
 
 router = APIRouter(prefix="/datasets", tags=["datasets"])
 
-def detect_delimiter_and_compression(file_content: bytes) -> tuple[str, str]:
-    """Detecta delimitador e compressão do arquivo"""
+def detect_encoding(file_content: bytes) -> str:
+    """Detecta a codificação do arquivo"""
+    # Para arquivos brasileiros, tentar utf-8 primeiro, depois latin1
+    try:
+        # Tentar decodificar uma amostra com utf-8
+        sample_size = min(1024, len(file_content))
+        sample = file_content[:sample_size].decode('utf-8')
+        return 'utf-8'
+    except UnicodeDecodeError:
+        # Se utf-8 falhar, usar latin1 (comum em arquivos brasileiros)
+        return 'latin1'
+
+def safe_decode(file_content: bytes, encoding: str) -> str:
+    """Decodifica o conteúdo do arquivo de forma segura"""
+    try:
+        return file_content.decode(encoding)
+    except UnicodeDecodeError:
+        # Se falhar, tentar com latin1 e ignorar erros
+        return file_content.decode('latin1', errors='ignore')
+
+def detect_delimiter_and_compression(file_content: bytes) -> tuple[str, str, str]:
+    """Detecta delimitador, compressão e codificação do arquivo"""
     # Verificar compressão
     compression = "none"
     if file_content.startswith(b'\x1f\x8b'):
@@ -22,40 +43,27 @@ def detect_delimiter_and_compression(file_content: bytes) -> tuple[str, str]:
     elif file_content.startswith(b'PK'):
         compression = "zip"
     
-    # Para detectar delimitador, usar uma amostra do arquivo
-    sample_size = min(1024, len(file_content))
-    sample = file_content[:sample_size].decode('utf-8', errors='ignore')
+    # Detectar codificação
+    encoding = detect_encoding(file_content)
     
-    # Testar delimitadores comuns
-    delimiters = [',', ';', '\t', '|']
-    best_delimiter = ','
-    max_fields = 0
+    # Para arquivos CSV simples, usar vírgula como delimitador padrão
+    # (mais comum em arquivos brasileiros)
+    delimiter = ','
     
-    for delimiter in delimiters:
-        try:
-            reader = csv.reader(io.StringIO(sample), delimiter=delimiter)
-            for row in reader:
-                if len(row) > max_fields:
-                    max_fields = len(row)
-                    best_delimiter = delimiter
-                break
-        except:
-            continue
-    
-    return best_delimiter, compression
+    return delimiter, compression, encoding
 
-def infer_schema_with_pandas(file_content: bytes, delimiter: str, compression: str) -> Dict[str, Any]:
+def infer_schema_with_pandas(file_content: bytes, delimiter: str, compression: str, encoding: str = 'utf-8') -> Dict[str, Any]:
     """Infere schema usando pandas"""
     try:
         if compression == "gzip":
-            df = pd.read_csv(io.BytesIO(file_content), delimiter=delimiter, compression='gzip', nrows=1000)
+            df = pd.read_csv(io.BytesIO(file_content), delimiter=delimiter, compression='gzip', nrows=1000, on_bad_lines='skip', encoding=encoding)
         elif compression == "zip":
             with zipfile.ZipFile(io.BytesIO(file_content)) as z:
                 csv_file = z.namelist()[0]
                 with z.open(csv_file) as f:
-                    df = pd.read_csv(f, delimiter=delimiter, nrows=1000)
+                    df = pd.read_csv(f, delimiter=delimiter, nrows=1000, on_bad_lines='skip', encoding=encoding)
         else:
-            df = pd.read_csv(io.BytesIO(file_content), delimiter=delimiter, nrows=1000)
+            df = pd.read_csv(io.BytesIO(file_content), delimiter=delimiter, nrows=1000, on_bad_lines='skip', encoding=encoding)
         
         schema = {}
         for col in df.columns:
@@ -77,18 +85,18 @@ def infer_schema_with_pandas(file_content: bytes, delimiter: str, compression: s
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Erro ao inferir schema com pandas: {str(e)}")
 
-def infer_schema_with_polars(file_content: bytes, delimiter: str, compression: str) -> Dict[str, Any]:
+def infer_schema_with_polars(file_content: bytes, delimiter: str, compression: str, encoding: str = 'utf-8') -> Dict[str, Any]:
     """Infere schema usando polars (fallback)"""
     try:
         if compression == "gzip":
-            df = pl.read_csv(io.BytesIO(file_content), separator=delimiter, n_rows=1000)
+            df = pl.read_csv(io.BytesIO(file_content), separator=delimiter, n_rows=1000, truncate_ragged_lines=True, encoding=encoding)
         elif compression == "zip":
             with zipfile.ZipFile(io.BytesIO(file_content)) as z:
                 csv_file = z.namelist()[0]
                 with z.open(csv_file) as f:
-                    df = pl.read_csv(f, separator=delimiter, n_rows=1000)
+                    df = pl.read_csv(f, separator=delimiter, n_rows=1000, truncate_ragged_lines=True, encoding=encoding)
         else:
-            df = pl.read_csv(io.BytesIO(file_content), separator=delimiter, n_rows=1000)
+            df = pl.read_csv(io.BytesIO(file_content), separator=delimiter, n_rows=1000, truncate_ragged_lines=True, encoding=encoding)
         
         schema = {}
         for col in df.columns:
@@ -125,15 +133,22 @@ async def upload_dataset(file: UploadFile = File(...)):
         if len(file_content) == 0:
             raise HTTPException(status_code=400, detail="Arquivo está vazio")
         
-        # Detectar delimitador e compressão
-        delimiter, compression = detect_delimiter_and_compression(file_content)
+        # Detectar delimitador, compressão e codificação
+        delimiter, compression, encoding = detect_delimiter_and_compression(file_content)
         
         # Tentar inferir schema com pandas primeiro
         try:
-            schema_info = infer_schema_with_pandas(file_content, delimiter, compression)
-        except:
+            schema_info = infer_schema_with_pandas(file_content, delimiter, compression, encoding)
+        except Exception as e:
             # Fallback para polars
-            schema_info = infer_schema_with_polars(file_content, delimiter, compression)
+            try:
+                schema_info = infer_schema_with_polars(file_content, delimiter, compression, encoding)
+            except Exception as e2:
+                # Último fallback: tentar com latin1 forçado
+                try:
+                    schema_info = infer_schema_with_pandas(file_content, delimiter, compression, 'latin1')
+                except Exception as e3:
+                    raise HTTPException(status_code=400, detail=f"Erro ao inferir schema: pandas={e}, polars={e2}, latin1={e3}")
         
         # Gerar ID único para o dataset
         dataset_id = f"ds_{str(uuid.uuid4())[:8]}"
@@ -157,15 +172,27 @@ async def upload_dataset(file: UploadFile = File(...)):
             conn.execute(create_table_sql)
             
             # Inserir dados na tabela
-            if compression == "gzip":
-                df = pd.read_csv(io.BytesIO(file_content), delimiter=delimiter, compression='gzip')
-            elif compression == "zip":
-                with zipfile.ZipFile(io.BytesIO(file_content)) as z:
-                    csv_file = z.namelist()[0]
-                    with z.open(csv_file) as f:
-                        df = pd.read_csv(f, delimiter=delimiter)
-            else:
-                df = pd.read_csv(io.BytesIO(file_content), delimiter=delimiter)
+            try:
+                if compression == "gzip":
+                    df = pd.read_csv(io.BytesIO(file_content), delimiter=delimiter, compression='gzip', on_bad_lines='skip', encoding=encoding)
+                elif compression == "zip":
+                    with zipfile.ZipFile(io.BytesIO(file_content)) as z:
+                        csv_file = z.namelist()[0]
+                        with z.open(csv_file) as f:
+                            df = pd.read_csv(f, delimiter=delimiter, on_bad_lines='skip', encoding=encoding)
+                else:
+                    df = pd.read_csv(io.BytesIO(file_content), delimiter=delimiter, on_bad_lines='skip', encoding=encoding)
+            except Exception as e:
+                # Fallback para latin1 se a codificação detectada falhar
+                if compression == "gzip":
+                    df = pd.read_csv(io.BytesIO(file_content), delimiter=delimiter, compression='gzip', on_bad_lines='skip', encoding='latin1')
+                elif compression == "zip":
+                    with zipfile.ZipFile(io.BytesIO(file_content)) as z:
+                        csv_file = z.namelist()[0]
+                        with z.open(csv_file) as f:
+                            df = pd.read_csv(f, delimiter=delimiter, on_bad_lines='skip', encoding='latin1')
+                else:
+                    df = pd.read_csv(io.BytesIO(file_content), delimiter=delimiter, on_bad_lines='skip', encoding='latin1')
             
             # Inserir no DuckDB
             conn.execute(f"DELETE FROM {dataset_id}")

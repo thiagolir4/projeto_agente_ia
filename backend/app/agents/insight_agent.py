@@ -1,5 +1,3 @@
-from agno.agent import Agent
-from agno.tools import Function
 from typing import Dict, Any, List
 import re
 
@@ -192,59 +190,6 @@ def analyze_data_patterns(context: str) -> str:
         patterns.append("• **Variabilidade**: Dados apresentam boa distribuição de valores")
     
     return patterns
-
-# Criar InsightAgent
-insight_agent = Agent(
-    name="InsightAgent",
-    model="gpt-4o",
-    instructions="""Você é um agente especializado em gerar insights executivos a partir de dados. Suas responsabilidades são:
-
-1. **Analisar a saída do DataAgent** (tabelas Markdown)
-2. **Gerar resumo executivo** em bullet points claros e objetivos
-3. **Fornecer recomendações** baseadas nos dados, SEM opiniões não fundamentadas
-4. **Identificar padrões** nos dados quando relevante
-
-**Regras importantes:**
-- Seja objetivo e técnico
-- Base todas as afirmações nos dados fornecidos
-- Use bullet points para clareza
-- Se não houver dados suficientes, indique claramente
-- NUNCA invente informações ou faça suposições não fundamentadas
-
-**Formato de resposta:**
-```
-## Resumo Executivo
-[bullet points baseados nos dados]
-
-## Recomendações
-[recomendações objetivas e fundamentadas]
-
-## Padrões Identificados
-[padrões observados nos dados, se houver]
-```""",
-            tools=[
-            Function(
-                name="extract_key_metrics",
-                function=extract_key_metrics,
-                description="Extrai métricas-chave do contexto fornecido pelo DataAgent"
-            ),
-            Function(
-                name="generate_executive_summary",
-                function=generate_executive_summary,
-                description="Gera resumo executivo baseado nas métricas extraídas"
-            ),
-            Function(
-                name="generate_recommendations",
-                function=generate_recommendations,
-                description="Gera recomendações baseadas nas métricas e contexto"
-            ),
-            Function(
-                name="analyze_data_patterns",
-                function=analyze_data_patterns,
-                description="Analisa padrões nos dados fornecidos"
-            )
-        ]
-)
 
 async def process_insights(context: str) -> str:
     """

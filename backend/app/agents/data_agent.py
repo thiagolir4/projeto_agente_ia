@@ -1,5 +1,3 @@
-from agno.agent import Agent
-from agno.tools import Function
 import duckdb
 import pandas as pd
 from typing import Dict, Any, Optional
@@ -7,6 +5,7 @@ from app.db import get_duckdb, close_duckdb
 from app.vectors import search
 import json
 import os
+import re
 
 # Memória simples por sessão (armazenamento local)
 session_memory = {}
@@ -146,8 +145,91 @@ def get_session_info(session_id: str) -> str:
     except Exception as e:
         return f"**Erro ao obter informações da sessão: {str(e)}**"
 
-# Criar agentes com memória por sessão
-def get_data_agent(session_id: str) -> Agent:
+class SimpleDataAgent:
+    """
+    Implementação simplificada do DataAgent sem dependência da biblioteca agno
+    """
+    
+    def __init__(self, session_id: str):
+        self.session_id = session_id
+        self.name = "DataAgent"
+        
+    async def run(self, prompt: str) -> str:
+        """
+        Processa o prompt e retorna resposta baseada no contexto
+        
+        Args:
+            prompt: Pergunta do usuário
+            
+        Returns:
+            Resposta formatada em Markdown
+        """
+        prompt_lower = prompt.lower()
+        
+        # Detectar tipo de consulta
+        if any(word in prompt_lower for word in ['query', 'sql', 'select', 'consulta']):
+            # Extrair query SQL se fornecida
+            sql_match = re.search(r'SELECT\s+.+?(?:FROM|$)', prompt, re.IGNORECASE)
+            if sql_match:
+                query = sql_match.group(0)
+                return execute_duckdb_query(query, self.session_id)
+            else:
+                return "**Por favor, forneça uma query SQL válida (apenas SELECT)**"
+        
+        elif any(word in prompt_lower for word in ['busca', 'similar', 'vector', 'search']):
+            # Busca por similaridade
+            return search_vectors_tool(prompt, self.session_id)
+        
+        elif any(word in prompt_lower for word in ['info', 'informação', 'sessão', 'tabela']):
+            # Informações da sessão
+            return get_session_info(self.session_id)
+        
+        elif any(word in prompt_lower for word in ['dados', 'registros', 'linhas', 'colunas']):
+            # Consulta básica de dados
+            try:
+                conn = get_duckdb()
+                table_name = f"ds_{self.session_id}_clean"
+                
+                # Verificar se a tabela existe
+                tables = conn.execute("SHOW TABLES").fetchall()
+                table_exists = any(table_name in str(table) for table in tables)
+                
+                if not table_exists:
+                    close_duckdb(conn)
+                    return f"**Tabela {table_name} não encontrada para esta sessão**"
+                
+                # Executar query básica
+                result = conn.execute(f"SELECT * FROM {table_name} LIMIT 10")
+                df = result.df()
+                close_duckdb(conn)
+                
+                if df.empty:
+                    return "**Nenhum dado encontrado**"
+                
+                return format_table_markdown(df)
+                
+            except Exception as e:
+                return f"**Erro ao consultar dados: {str(e)}**"
+        
+        else:
+            # Resposta padrão com instruções
+            return """**Olá! Sou o DataAgent e posso ajudá-lo com:**
+
+• **Consultas SQL**: Execute queries SELECT nos seus dados
+• **Busca por similaridade**: Encontre dados relacionados
+• **Informações da sessão**: Veja tabelas e registros disponíveis
+• **Visualização de dados**: Veja os primeiros registros
+
+**Exemplos de perguntas:**
+- "Mostre os primeiros 5 registros"
+- "Quantos registros existem?"
+- "Quais colunas estão disponíveis?"
+- "Execute: SELECT * FROM dados LIMIT 10"
+
+Por favor, seja mais específico sobre o que você gostaria de analisar."""
+
+# Função para obter DataAgent (mantém compatibilidade com o código existente)
+def get_data_agent(session_id: str) -> SimpleDataAgent:
     """
     Cria ou retorna DataAgent para uma sessão específica
     
@@ -161,53 +243,7 @@ def get_data_agent(session_id: str) -> Agent:
         return session_memory[session_id]
     
     # Criar novo agente
-    agent = Agent(
-        name="DataAgent",
-        model="gpt-4o",
-        instructions="""Você é um agente especializado em análise de dados. Suas responsabilidades são:
-
-1. **SEMPRE responda em tabelas Markdown** usando as ferramentas disponíveis
-2. **Seja neutro e técnico** em todas as respostas
-3. **NUNCA invente dados**: se não houver dados, marque como 'N/D'
-4. Use as ferramentas para:
-   - Executar queries SQL no DuckDB (apenas SELECT)
-   - Buscar por similaridade nos vetores
-   - Formatar resultados em tabelas Markdown
-
-5. **Formato de resposta obrigatório**: Use sempre tabelas Markdown
-6. **Se não houver dados**: Responda com "N/D" ou "Nenhum dado encontrado"
-7. **Mantenha-se objetivo**: Sem opiniões pessoais ou interpretações subjetivas
-
-Exemplo de resposta:
-```markdown
-| Coluna | Valor |
-|--------|-------|
-| Dado1  | Valor1|
-| Dado2  | N/D   |
-```""",
-        tools=[
-            Function(
-                name="execute_duckdb_query",
-                function=execute_duckdb_query,
-                description="Executa query SELECT no DuckDB para a sessão atual. Use apenas queries SELECT."
-            ),
-            Function(
-                name="search_vectors",
-                function=search_vectors_tool,
-                description="Busca por similaridade nos vetores da sessão atual."
-            ),
-            Function(
-                name="format_table_markdown",
-                function=format_table_markdown,
-                description="Formata DataFrame como tabela Markdown."
-            ),
-            Function(
-                name="get_session_info",
-                function=get_session_info,
-                description="Obtém informações sobre as tabelas disponíveis na sessão atual."
-            )
-        ]
-    )
+    agent = SimpleDataAgent(session_id)
     
     # Armazenar na memória
     session_memory[session_id] = agent
