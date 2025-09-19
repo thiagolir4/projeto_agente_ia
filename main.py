@@ -165,5 +165,9 @@ if __name__ == "__main__":
     print("🚀 Iniciando aplicação Flask...")
     print("📊 MongoDB:", db_config.MONGO_URI)
     print("🗄️  Database:", db_config.DB_NAME)
-    print("🌐 Acesse: http://localhost:5000")
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    
+    # Usar porta do Railway ou 5000 como padrão
+    port = int(os.environ.get("PORT", 5000))
+    print(f"🌐 Acesse: http://localhost:{port}")
+    
+    app.run(debug=True, host='0.0.0.0', port=port)
