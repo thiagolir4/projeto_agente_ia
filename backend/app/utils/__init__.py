@@ -1,0 +1,2 @@
+# Utilitários e funções auxiliares
+

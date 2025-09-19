@@ -1,205 +1,218 @@
-# Projeto Agente IA
+# 🤖 Agente IA - Análise de Dados MongoDB
 
-## Visão Geral
+Sistema inteligente para análise de dados com interface web, chat conversacional e integração com MongoDB.
 
-Este é um monorepo que implementa um sistema de agente de IA com backend em Python (FastAPI) e frontend em Next.js. O projeto visa criar uma plataforma completa para análise de dados, chat com IA e upload de arquivos.
+## ✨ Funcionalidades
 
-## Stack Tecnológica
+- 📊 **Importação de arquivos CSV** - Upload e processamento de dados
+- 🤖 **Chat inteligente com IA** - Análise conversacional dos dados
+- 📈 **Análise em tempo real** - Consultas diretas ao MongoDB
+- ⚡ **Performance otimizada** - Cache e índices para velocidade
+- 🎨 **Interface moderna** - Design responsivo e intuitivo
+- 🔍 **Consultas inteligentes** - Interpretação natural de perguntas
+
+## 🚀 Tecnologias
 
 ### Backend
-
 - **Python 3.11** - Linguagem principal
-- **FastAPI** - Framework web moderno e rápido
-- **Pydantic** - Validação de dados e configurações
-- **Pandas & Polars** - Manipulação de dados
-- **DuckDB** - Banco de dados analítico
-- **ChromaDB** - Vector database para embeddings
-- **Uvicorn** - Servidor ASGI
+- **Flask** - Framework web
+- **MongoDB** - Banco de dados NoSQL
+- **LangChain** - Framework para IA
+- **OpenAI** - Modelo de linguagem
+- **FAISS** - Busca vetorial
+- **Pandas** - Manipulação de dados
 
 ### Frontend
+- **HTML5/CSS3** - Interface web
+- **JavaScript** - Interatividade
+- **Bootstrap** - Design responsivo
 
-- **Next.js 14** - Framework React com App Router
-- **TypeScript** - Tipagem estática
-- **React** - Biblioteca de interface
-- **Tailwind CSS** - Framework CSS utilitário
+## 📋 Pré-requisitos
 
-## Estrutura do Projeto
+- Python 3.11+
+- MongoDB
+- Chave da API OpenAI
+
+## 🚀 Instalação e Execução
+
+### 1. Clone o repositório
+```bash
+git clone https://github.com/thiagolir4/projeto_agente_ia.git
+cd projeto_agente_ia
+```
+
+### 2. Instale as dependências
+```bash
+pip install -r backend/requirements.txt
+```
+
+### 3. Configure as variáveis de ambiente
+```bash
+# Crie um arquivo .env na raiz do projeto
+OPENAI_API_KEY=sua_chave_openai_aqui
+MONGO_URI=mongodb://localhost:27017/
+DB_NAME=dbGrupoOscar
+```
+
+### 4. Inicie o MongoDB
+```bash
+# Windows
+net start MongoDB
+
+# Linux/Mac
+sudo systemctl start mongod
+```
+
+### 5. Execute a aplicação
+```bash
+python main.py
+```
+
+### 6. Acesse a aplicação
+- **Interface Web**: http://localhost:5000
+- **MongoDB**: localhost:27017
+
+## 🐳 Docker (Recomendado)
+
+### 1. Execute com Docker Compose
+```bash
+docker-compose up -d
+```
+
+### 2. Acesse a aplicação
+- **Interface Web**: http://localhost:5000
+
+## 📊 Como Usar
+
+### 1. **Importar Dados**
+- Acesse a interface web
+- Clique em "Escolher arquivo"
+- Selecione um arquivo CSV
+- Clique em "Importar para MongoDB"
+
+### 2. **Chat com IA**
+- Use a interface de chat
+- Faça perguntas sobre os dados
+- Exemplos:
+  - "Quais são os top 5 SKUs mais frequentes?"
+  - "Mostre as lojas com mais devoluções"
+  - "Quantos usuários únicos existem?"
+
+### 3. **Visualizar Dados**
+- Clique em "Ver Coleção"
+- Visualize os dados importados
+- Navegue pelos registros
+
+## 🔧 Configuração Avançada
+
+### Variáveis de Ambiente
+```bash
+# MongoDB
+MONGO_URI=mongodb://localhost:27017/
+DB_NAME=dbGrupoOscar
+
+# OpenAI
+OPENAI_API_KEY=sua_chave_aqui
+
+# Aplicação
+FLASK_ENV=development
+FLASK_DEBUG=True
+```
+
+### Índices MongoDB
+O sistema cria automaticamente índices para otimizar consultas:
+- SKU
+- LOJA
+- IDUSUARIO
+- DATA_DEVOLUCAO
+- TIPOMOVIMENTACAO
+- DIFERENCA_VALOR
+
+## 📁 Estrutura do Projeto
 
 ```
 projeto_agente_ia/
+├── main.py                    # Aplicação Flask principal
 ├── backend/
 │   ├── app/
-│   │   ├── main.py
-│   │   └── config.py
-│   ├── requirements.txt
-│   ├── env.example
-│   └── .venv/
+│   │   ├── agents/           # Agente IA
+│   │   │   └── mongodb_agent.py
+│   │   ├── database/         # Configuração MongoDB
+│   │   │   └── db_config.py
+│   │   ├── modules/          # Módulos de importação
+│   │   │   └── importar_csv.py
+│   │   ├── errors/           # Tratamento de erros
+│   │   └── utils/            # Utilitários
+│   └── requirements.txt      # Dependências Python
 ├── frontend/
-│   ├── src/
-│   │   ├── app/
-│   │   │   ├── page.tsx
-│   │   │   ├── chat/
-│   │   │   ├── upload/
-│   │   │   └── finance/
-│   │   └── components/
-│   │       ├── Navbar.tsx
-│   │       ├── ChatBox.tsx
-│   │       ├── FileUploader.tsx
-│   │       └── DataTable.tsx
-│   ├── package.json
-│   └── env.local.example
-├── .gitignore
-└── README.md
+│   ├── templates/            # Templates HTML
+│   │   ├── index.html
+│   │   └── colecao.html
+│   └── static/              # CSS, JS, imagens
+│       └── style.css
+├── Dockerfile               # Imagem Docker
+├── docker-compose.yml       # Orquestração
+└── README.md               # Este arquivo
 ```
 
-## Objetivos do MVP
+## 🎯 Exemplos de Uso
 
-1. **Sistema de Chat** - Interface para conversação com IA
-2. **Upload de Arquivos** - Sistema para carregar e processar documentos
-3. **Análise Financeira** - Dashboard para análise de dados financeiros
-4. **API REST** - Backend robusto com endpoints para todas as funcionalidades
-5. **Interface Moderna** - Frontend responsivo e intuitivo
+### Consultas Inteligentes
+- "Quais são os top 10 SKUs mais frequentes?"
+- "Mostre as lojas com mais devoluções em formato de tabela"
+- "Quantos registros existem no banco?"
+- "Quais usuários fazem mais devoluções?"
 
-## Como Executar
+### Análise de Dados
+- Frequência de SKUs
+- Análise por loja
+- Análise por usuário
+- Análise temporal
+- Valores de devolução
 
-### Pré-requisitos
+## 🐛 Troubleshooting
 
-- Python 3.11+
-- Node.js 18+
-- npm ou yarn
-
-### Backend
-
-1. **Criar ambiente virtual:**
-
+### Erro de conexão MongoDB
 ```bash
-cd backend
-python -m venv .venv
-.venv\Scripts\activate  # Windows
-# ou
-source .venv/bin/activate  # Linux/Mac
+# Verificar se MongoDB está rodando
+net start MongoDB  # Windows
+sudo systemctl start mongod  # Linux
 ```
 
-2. **Instalar dependências:**
+### Erro OpenAI API
+- Verifique se a chave está correta
+- Verifique se tem créditos na conta
 
+### Erro de dependências
 ```bash
-pip install -r requirements.txt
+# Reinstalar dependências
+pip install -r backend/requirements.txt --force-reinstall
 ```
 
-3. **Configurar variáveis de ambiente:**
+## 🤝 Contribuição
 
-```bash
-cp env.example .env
-# Editar .env com suas chaves
-```
-
-4. **Executar servidor:**
-
-```bash
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-```
-
-### Frontend
-
-1. **Instalar dependências:**
-
-```bash
-cd frontend
-npm install
-```
-
-2. **Configurar variáveis de ambiente:**
-
-```bash
-cp env.local.example .env.local
-```
-
-3. **Executar em modo desenvolvimento:**
-
-```bash
-npm run dev
-```
-
-## Endpoints da API
-
-- `GET /health` - Status da aplicação
-- `GET /` - Endpoint raiz
-- `POST /chat` - Envio de mensagens para IA (a implementar)
-- `POST /upload` - Upload de arquivos (a implementar)
-- `GET /finance/data` - Dados financeiros (a implementar)
-
-## Rotas do Frontend
-
-- `/` - Página inicial com visão geral
-- `/chat` - Interface de chat com IA
-- `/upload` - Sistema de upload de arquivos
-- `/finance` - Dashboard de análise financeira
-
-## Critérios de Aceite
-
-- [x] Backend responde em `/health` com status OK
-- [x] Frontend abre em `/` com navbar funcional
-- [x] Estrutura de rotas implementada
-- [x] Componentes básicos criados
-- [x] Configuração de ambiente completa
-- [x] Interface responsiva com Tailwind CSS
-- [x] Sistema de navegação entre páginas
-- [x] Componentes interativos (ChatBox, FileUploader, DataTable)
-
-## Comandos de Desenvolvimento
-
-### Backend
-
-```bash
-# Ativar ambiente virtual
-cd backend
-.venv\Scripts\activate  # Windows
-source .venv/bin/activate  # Linux/Mac
-
-# Executar servidor
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-
-# Verificar endpoints
-curl http://localhost:8000/health
-```
-
-### Frontend
-
-```bash
-# Instalar dependências
-cd frontend
-npm install
-
-# Executar em desenvolvimento
-npm run dev
-
-# Build para produção
-npm run build
-
-# Executar build
-npm start
-```
-
-## Desenvolvimento
-
-Para contribuir com o projeto:
-
-1. Faça um fork do repositório
+1. Faça um fork do projeto
 2. Crie uma branch para sua feature
-3. Implemente as mudanças
-4. Execute os testes
-5. Faça commit e push
-6. Abra um Pull Request
+3. Commit suas mudanças
+4. Push para a branch
+5. Abra um Pull Request
 
-## Próximos Passos
-
-1. **Integração com OpenAI API** - Conectar chat com GPT
-2. **Processamento de arquivos** - Implementar análise de documentos
-3. **Dados financeiros reais** - Conectar com APIs de mercado
-4. **Autenticação** - Sistema de login e usuários
-5. **Persistência de dados** - Banco de dados para histórico
-6. **Testes automatizados** - Unit e integration tests
-
-## Licença
+## 📄 Licença
 
 Este projeto está sob a licença MIT.
+
+## 👨‍💻 Autor
+
+**Thiago Lira**
+- GitHub: [@thiagolir4](https://github.com/thiagolir4)
+
+## 🙏 Agradecimentos
+
+- OpenAI pela API de linguagem
+- MongoDB pela base de dados
+- LangChain pelo framework de IA
+- Flask pela simplicidade do backend
+
+---
+
+**⭐ Se este projeto te ajudou, considere dar uma estrela!**
