@@ -49,6 +49,10 @@ def index():
     colecoes = db.list_collection_names()
     return render_template("index.html", colecoes=colecoes)
 
+@app.route("/health")
+def health():
+    return jsonify({"status": "ok", "message": "Aplicação funcionando"})
+
 
 @app.route("/importar", methods=["POST"])
 def importar():
