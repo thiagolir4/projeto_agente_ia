@@ -192,6 +192,4 @@ pip install -r requirements.txt --force-reinstall
 - 📊 **Pandas**: Para processar arquivos CSV
 - 🎨 **Bootstrap**: Para o design da interface
 
-## 📄 Licença
 
-Este projeto está sob a licença MIT, o que significa que você pode usar, modificar e distribuir livremente.
