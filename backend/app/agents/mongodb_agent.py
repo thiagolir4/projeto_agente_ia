@@ -135,20 +135,30 @@ class MongoDBAgent:
         pergunta_lower = pergunta.lower().strip()
         print(f"🔍 Analisando pergunta: '{pergunta_lower}'")
         
-        # Detectar tipo de pergunta
+        # Detectar tipo de pergunta com maior precisão
         tipo_pergunta = None
         quantidade = 10  # padrão
         
-        # Verificar padrões específicos
-        for tipo, padroes in self.padroes_perguntas.items():
-            print(f"🔍 Testando tipo: {tipo}")
-            for padrao in padroes:
-                if re.search(padrao, pergunta_lower):
-                    print(f"✅ Padrão encontrado: {padrao}")
-                    tipo_pergunta = tipo
+        # Verificar padrões específicos com prioridade
+        if any(palavra in pergunta_lower for palavra in ['inconsistência', 'inconsistencia', 'discrepância', 'discrepancia', 'problema', 'erro', 'dados inconsistentes', 'verificar dados']):
+            tipo_pergunta = "inconsistencia"
+        elif any(palavra in pergunta_lower for palavra in ['quantos', 'quantas', 'total', 'contar', 'count', 'soma', 'número', 'numero']):
+            tipo_pergunta = "contagem"
+        elif any(palavra in pergunta_lower for palavra in ['mais', 'top', 'melhor', 'pior', 'maior', 'menor', 'frequente', 'frequentes']):
+            tipo_pergunta = "ranking"
+        elif any(palavra in pergunta_lower for palavra in ['exemplo', 'amostra', 'dados', 'registros']):
+            tipo_pergunta = "exemplo"
+        else:
+            # Verificar padrões específicos do dicionário
+            for tipo, padroes in self.padroes_perguntas.items():
+                print(f"🔍 Testando tipo: {tipo}")
+                for padrao in padroes:
+                    if re.search(padrao, pergunta_lower):
+                        print(f"✅ Padrão encontrado: {padrao}")
+                        tipo_pergunta = tipo
+                        break
+                if tipo_pergunta:
                     break
-            if tipo_pergunta:
-                break
         
         # Detectar quantidade solicitada
         quantidade = self._detectar_quantidade(pergunta)
@@ -158,11 +168,21 @@ class MongoDBAgent:
             'tabela', 'table', 'formato de tabela', 'em tabela', 'como tabela'
         ])
         
+        # Detectar coleções específicas mencionadas
+        colecoes_especificas = []
+        if 'devolução' in pergunta_lower or 'devolucao' in pergunta_lower:
+            colecoes_especificas.append('DEVOLUCAO')
+        if 'cancelamento' in pergunta_lower:
+            colecoes_especificas.append('CANCELAMENTO')
+        if 'ajuste' in pergunta_lower or 'estoque' in pergunta_lower:
+            colecoes_especificas.append('AJUSTES ESTOQUE')
+        
         resultado = {
             'tipo': tipo_pergunta,
             'quantidade': quantidade,
             'formato_tabela': formato_tabela,
-            'pergunta_original': pergunta
+            'pergunta_original': pergunta,
+            'colecoes_especificas': colecoes_especificas
         }
         
         print(f"🎯 Interpretação final: {resultado}")
@@ -222,6 +242,7 @@ class MongoDBAgent:
     def carregar_dados_mongo(self, colecoes: List[str] = None) -> List[Document]:
         """
         Carrega dados das coleções do MongoDB e converte para documentos LangChain.
+        Agora carrega dados de TODAS as coleções disponíveis no banco.
         
         Args:
             colecoes: Lista de nomes das coleções. Se None, carrega todas.
@@ -244,8 +265,17 @@ class MongoDBAgent:
             colecao = self.db[colecao_nome]
             
             # OTIMIZAÇÃO: Usar agregação com $sample para amostra representativa
+            # Mas primeiro verificar se a coleção tem dados
+            total_docs = colecao.count_documents({})
+            if total_docs == 0:
+                print(f"⚠️ Coleção '{colecao_nome}' está vazia, pulando...")
+                continue
+                
+            # Usar amostra menor para coleções grandes
+            sample_size = min(500, total_docs)
+            
             pipeline = [
-                {"$sample": {"size": 1000}},  # Amostra aleatória de 1000 registros
+                {"$sample": {"size": sample_size}},  # Amostra aleatória
                 {"$project": {  # Selecionar apenas campos importantes
                     "SKU": 1,
                     "LOJA": 1, 
@@ -365,14 +395,17 @@ Você é um assistente especializado em consultar dados de um banco MongoDB.
 
 INSTRUÇÕES IMPORTANTES:
 1. Responda SEMPRE em português brasileiro
-2. Você tem acesso COMPLETO ao banco de dados MongoDB com todos os 160.621+ registros
-3. Para perguntas sobre CONTAGEM, TOTAIS ou ESTATÍSTICAS, use consultas diretas ao banco completo
-4. Se a informação não estiver nos documentos fornecidos, use consultas diretas ao MongoDB
-5. Seja claro e objetivo
-6. Se encontrar dados relevantes, apresente-os de forma organizada
-7. Sempre mencione que os dados são do banco COMPLETO, não de uma amostra
-8. NUNCA retorne dados brutos com pipes (|) - sempre formate adequadamente
-9. Para dados tabulares, use formatação HTML quando apropriado
+2. Você tem acesso COMPLETO a TODAS as coleções do banco de dados MongoDB
+3. O banco possui múltiplas coleções (DEVOLUCAO, CANCELAMENTO, AJUSTES ESTOQUE, etc.)
+4. Para perguntas sobre CONTAGEM, TOTAIS ou ESTATÍSTICAS, use consultas diretas ao banco completo
+5. Se a informação não estiver nos documentos fornecidos, use consultas diretas ao MongoDB
+6. Seja claro e objetivo
+7. Se encontrar dados relevantes, apresente-os de forma organizada
+8. Sempre mencione que os dados são do banco COMPLETO, não de uma amostra
+9. NUNCA retorne dados brutos com pipes (|) - sempre formate adequadamente
+10. Para dados tabulares, use formatação HTML quando apropriado
+11. Quando perguntado sobre uma coleção específica, sempre consulte a coleção correta
+12. Você pode consultar qualquer coleção do banco automaticamente
 
 Documentos relevantes (amostra para contexto):
 {context}
@@ -391,27 +424,77 @@ Resposta em português:""",
             print(f"❌ Erro ao criar agente: {e}")
             raise
     
+    def _detectar_colecao_relevante(self, pergunta: str) -> str:
+        """
+        Detecta qual coleção é mais relevante para a pergunta baseada em palavras-chave.
+        """
+        pergunta_lower = pergunta.lower()
+        
+        # Obter todas as coleções disponíveis
+        colecoes = self.db.list_collection_names()
+        
+        # Mapear palavras-chave para coleções
+        mapeamento_colecoes = {
+            'devolução': ['devolucao', 'devolução', 'devolucoes', 'devoluções'],
+            'cancelamento': ['cancelamento', 'cancelamentos', 'cancelar', 'cancelado'],
+            'ajuste': ['ajuste', 'ajustes', 'estoque', 'inventario', 'inventário'],
+            'venda': ['venda', 'vendas', 'vender', 'vendido'],
+            'produto': ['produto', 'produtos', 'item', 'items'],
+            'cliente': ['cliente', 'clientes', 'usuario', 'usuário', 'usuarios', 'usuários']
+        }
+        
+        # Procurar por palavras-chave na pergunta
+        for tipo, palavras in mapeamento_colecoes.items():
+            if any(palavra in pergunta_lower for palavra in palavras):
+                # Procurar coleção que contenha essa palavra-chave
+                for colecao in colecoes:
+                    if tipo in colecao.lower():
+                        return colecao
+        
+        # Se não encontrou, usar a coleção com mais registros
+        colecao_maior = None
+        max_registros = 0
+        
+        for colecao in colecoes:
+            try:
+                count = self.db[colecao].count_documents({})
+                if count > max_registros:
+                    max_registros = count
+                    colecao_maior = colecao
+            except:
+                continue
+        
+        return colecao_maior or (colecoes[0] if colecoes else None)
+
     def _fazer_consulta_direta(self, pergunta: str) -> str:
         """
         Faz consultas diretas ao MongoDB para perguntas específicas de contagem e análise.
+        Agora funciona com qualquer coleção do banco.
         """
         pergunta_lower = pergunta.lower()
         
         try:
+            # Detectar coleção relevante
+            colecao_nome = self._detectar_colecao_relevante(pergunta)
+            if not colecao_nome:
+                return "Nenhuma coleção encontrada no banco de dados."
+            
+            colecao = self.db[colecao_nome]
+            
             # Contar total de registros
             if any(palavra in pergunta_lower for palavra in ['quantas linhas', 'quantos registros', 'total de registros', 'quantos documentos']):
-                total = self.db.DEVOLUCAO.count_documents({})
-                return f"O total de registros na coleção DEVOLUCAO é: **{total:,}** registros."
+                total = colecao.count_documents({})
+                return f"O total de registros na coleção **{colecao_nome}** é: **{total:,}** registros."
             
             # Contar valores únicos de IDUSUARIO
             if any(palavra in pergunta_lower for palavra in ['idusuario', 'usuarios diferentes', 'usuários únicos']):
-                usuarios_unicos = self.db.DEVOLUCAO.distinct('IDUSUARIO')
-                return f"Existem **{len(usuarios_unicos):,}** IDUSUARIOS únicos na coleção DEVOLUCAO."
+                usuarios_unicos = colecao.distinct('IDUSUARIO')
+                return f"Existem **{len(usuarios_unicos):,}** IDUSUARIOS únicos na coleção **{colecao_nome}**."
             
             # Contar valores únicos de SKU
             if any(palavra in pergunta_lower for palavra in ['sku', 'skus diferentes', 'produtos únicos']):
-                skus_unicos = self.db.DEVOLUCAO.distinct('SKU')
-                return f"Existem **{len(skus_unicos):,}** SKUs únicos na coleção DEVOLUCAO."
+                skus_unicos = colecao.distinct('SKU')
+                return f"Existem **{len(skus_unicos):,}** SKUs únicos na coleção **{colecao_nome}**."
             
             # Somar coluna DIFERENCA_VALOR
             if any(palavra in pergunta_lower for palavra in ['soma', 'somatória', 'total', 'diferenca_valor']):
@@ -421,12 +504,12 @@ Resposta em português:""",
                         "total": {"$sum": {"$toDouble": {"$replaceAll": {"input": "$DIFERENCA_VALOR", "find": ",", "replacement": "."}}}}
                     }}
                 ]
-                resultado = list(self.db.DEVOLUCAO.aggregate(pipeline))
+                resultado = list(colecao.aggregate(pipeline))
                 if resultado:
                     total = resultado[0]['total']
-                    return f"A somatória da coluna DIFERENCA_VALOR é: **{total:,.2f}**"
+                    return f"A somatória da coluna DIFERENCA_VALOR na coleção **{colecao_nome}** é: **{total:,.2f}**"
                 else:
-                    return "Não foi possível calcular a somatória da coluna DIFERENCA_VALOR."
+                    return f"Não foi possível calcular a somatória da coluna DIFERENCA_VALOR na coleção **{colecao_nome}**."
             
             # Análise de datas mais frequentes
             if any(palavra in pergunta_lower for palavra in ['data', 'datas', 'mais se repete', 'frequente', 'comum']):
@@ -441,7 +524,7 @@ Resposta em português:""",
                     {"$sort": {"count": -1}},
                     {"$limit": limite}
                 ]
-                resultado = list(self.db.DEVOLUCAO.aggregate(pipeline))
+                resultado = list(colecao.aggregate(pipeline))
                 if resultado:
                     # Verificar se deve retornar em formato de tabela
                     if any(palavra in pergunta_lower for palavra in ['tabela', 'table', 'formato de tabela']):
@@ -456,12 +539,26 @@ Resposta em português:""",
                             ]
                         )
                     else:
-                        resposta = f"As {limite} datas de devolução mais frequentes no banco completo são:\n\n"
+                        html = f"""
+                        <div style="margin: 20px 0; font-family: Arial, sans-serif;">
+                            <h3 style="color: #333; margin-bottom: 15px; text-align: center;">📅 Top {limite} Datas Mais Frequentes</h3>
+                            <p style="color: #666; text-align: center; margin-bottom: 20px;">Coleção: <strong>{colecao_nome}</strong></p>
+                            <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; border-left: 4px solid #007bff;">
+                        """
                         for i, item in enumerate(resultado, 1):
                             data = item['_id'] if item['_id'] else 'N/A'
                             count = item['count']
-                            resposta += f"{i}. **{data}**: {count:,} registros\n"
-                        return resposta
+                            html += f"""
+                                <div style="padding: 8px 0; border-bottom: 1px solid #dee2e6; display: flex; justify-content: space-between;">
+                                    <span style="font-weight: bold; color: #495057;">{i}. {data}</span>
+                                    <span style="color: #007bff; font-weight: bold;">{count:,} registros</span>
+                                </div>
+                            """
+                        html += """
+                            </div>
+                        </div>
+                        """
+                        return html
                 else:
                     return "Não foi possível analisar as datas de devolução."
             
@@ -479,13 +576,13 @@ Resposta em português:""",
                     {"$sort": {"count": -1}},
                     {"$limit": limite}
                 ]
-                resultado = list(self.db.DEVOLUCAO.aggregate(pipeline))
+                resultado = list(colecao.aggregate(pipeline))
                 if resultado:
                     if any(palavra in pergunta_lower for palavra in ['tabela', 'table', 'formato de tabela']):
                         return self._formatar_como_tabela(
                             dados=resultado,
-                            colunas=['Posição', 'ID Usuário', 'Quantidade de Devoluções'],
-                            titulo=f"Top {limite} Usuários com Mais Devoluções",
+                            colunas=['Posição', 'ID Usuário', 'Quantidade de Registros'],
+                            titulo=f"Top {limite} Usuários Mais Frequentes - Coleção {colecao_nome}",
                             formata_dados=lambda i, item: [
                                 i + 1,
                                 item['_id'] if item['_id'] else 'N/A',
@@ -493,11 +590,11 @@ Resposta em português:""",
                             ]
                         )
                     else:
-                        resposta = f"Os {limite} usuários com mais devoluções no banco completo são:\n\n"
+                        resposta = f"Os {limite} usuários mais frequentes na coleção **{colecao_nome}** são:\n\n"
                         for i, item in enumerate(resultado, 1):
                             usuario = item['_id'] if item['_id'] else 'N/A'
                             count = item['count']
-                            resposta += f"{i}. **Usuário {usuario}**: {count:,} devoluções\n"
+                            resposta += f"{i}. **Usuário {usuario}**: {count:,} registros\n"
                         return resposta
                 else:
                     return "Não foi possível analisar os usuários."
@@ -516,13 +613,13 @@ Resposta em português:""",
                     {"$sort": {"count": -1}},
                     {"$limit": limite}
                 ]
-                resultado = list(self.db.DEVOLUCAO.aggregate(pipeline))
+                resultado = list(colecao.aggregate(pipeline))
                 if resultado:
                     if any(palavra in pergunta_lower for palavra in ['tabela', 'table', 'formato de tabela']):
                         return self._formatar_como_tabela(
                             dados=resultado,
-                            colunas=['Posição', 'SKU', 'Quantidade de Devoluções'],
-                            titulo=f"Top {limite} SKUs Mais Devolvidos",
+                            colunas=['Posição', 'SKU', 'Quantidade de Registros'],
+                            titulo=f"Top {limite} SKUs Mais Frequentes - Coleção {colecao_nome}",
                             formata_dados=lambda i, item: [
                                 i + 1,
                                 item['_id'] if item['_id'] else 'N/A',
@@ -530,11 +627,11 @@ Resposta em português:""",
                             ]
                         )
                     else:
-                        resposta = f"Os {limite} SKUs mais devolvidos no banco completo são:\n\n"
+                        resposta = f"Os {limite} SKUs mais frequentes na coleção **{colecao_nome}** são:\n\n"
                         for i, item in enumerate(resultado, 1):
                             sku = item['_id'] if item['_id'] else 'N/A'
                             count = item['count']
-                            resposta += f"{i}. **SKU {sku}**: {count:,} devoluções\n"
+                            resposta += f"{i}. **SKU {sku}**: {count:,} registros\n"
                         return resposta
                 else:
                     return "Não foi possível analisar os SKUs."
@@ -552,13 +649,13 @@ Resposta em português:""",
                     {"$sort": {"count": -1}},
                     {"$limit": limite}
                 ]
-                resultado = list(self.db.DEVOLUCAO.aggregate(pipeline))
+                resultado = list(colecao.aggregate(pipeline))
                 if resultado:
                     if any(palavra in pergunta_lower for palavra in ['tabela', 'table', 'formato de tabela']):
                         return self._formatar_como_tabela(
                             dados=resultado,
-                            colunas=['Posição', 'Loja', 'Quantidade de Devoluções'],
-                            titulo=f"Top {limite} Lojas com Mais Devoluções",
+                            colunas=['Posição', 'Loja', 'Quantidade de Registros'],
+                            titulo=f"Top {limite} Lojas Mais Frequentes - Coleção {colecao_nome}",
                             formata_dados=lambda i, item: [
                                 i + 1,
                                 item['_id'] if item['_id'] else 'N/A',
@@ -566,12 +663,26 @@ Resposta em português:""",
                             ]
                         )
                     else:
-                        resposta = f"As {limite} lojas com mais devoluções no banco completo são:\n\n"
+                        html = f"""
+                        <div style="margin: 20px 0; font-family: Arial, sans-serif;">
+                            <h3 style="color: #333; margin-bottom: 15px; text-align: center;">🏪 Top {limite} Lojas Mais Frequentes</h3>
+                            <p style="color: #666; text-align: center; margin-bottom: 20px;">Coleção: <strong>{colecao_nome}</strong></p>
+                            <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; border-left: 4px solid #28a745;">
+                        """
                         for i, item in enumerate(resultado, 1):
                             loja = item['_id'] if item['_id'] else 'N/A'
                             count = item['count']
-                            resposta += f"{i}. **Loja {loja}**: {count:,} devoluções\n"
-                        return resposta
+                            html += f"""
+                                <div style="padding: 8px 0; border-bottom: 1px solid #dee2e6; display: flex; justify-content: space-between;">
+                                    <span style="font-weight: bold; color: #495057;">{i}. Loja {loja}</span>
+                                    <span style="color: #28a745; font-weight: bold;">{count:,} registros</span>
+                                </div>
+                            """
+                        html += """
+                            </div>
+                        </div>
+                        """
+                        return html
                 else:
                     return "Não foi possível analisar as lojas."
             
@@ -584,7 +695,7 @@ Resposta em português:""",
                     }},
                     {"$sort": {"count": -1}}
                 ]
-                resultado = list(self.db.DEVOLUCAO.aggregate(pipeline))
+                resultado = list(colecao.aggregate(pipeline))
                 if resultado:
                     if any(palavra in pergunta_lower for palavra in ['tabela', 'table', 'formato de tabela']):
                         return self._formatar_como_tabela(
@@ -597,24 +708,38 @@ Resposta em português:""",
                             ]
                         )
                     else:
-                        resposta = "Distribuição de tipos de movimentação no banco completo:\n\n"
+                        html = f"""
+                        <div style="margin: 20px 0; font-family: Arial, sans-serif;">
+                            <h3 style="color: #333; margin-bottom: 15px; text-align: center;">📊 Distribuição de Tipos de Movimentação</h3>
+                            <p style="color: #666; text-align: center; margin-bottom: 20px;">Coleção: <strong>{colecao_nome}</strong></p>
+                            <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; border-left: 4px solid #ffc107;">
+                        """
                         for item in resultado:
                             tipo = item['_id'] if item['_id'] else 'N/A'
                             count = item['count']
-                            resposta += f"• **{tipo}**: {count:,} registros\n"
-                        return resposta
+                            html += f"""
+                                <div style="padding: 8px 0; border-bottom: 1px solid #dee2e6; display: flex; justify-content: space-between;">
+                                    <span style="font-weight: bold; color: #495057;">• {tipo}</span>
+                                    <span style="color: #ffc107; font-weight: bold;">{count:,} registros</span>
+                                </div>
+                            """
+                        html += """
+                            </div>
+                        </div>
+                        """
+                        return html
                 else:
                     return "Não foi possível analisar os tipos de movimentação."
             
             # Consulta de dados de exemplo em formato de tabela
             if any(palavra in pergunta_lower for palavra in ['exemplo', 'amostra', 'dados', 'registros']) and any(palavra in pergunta_lower for palavra in ['tabela', 'table', 'formato de tabela']):
                 # Buscar alguns registros de exemplo
-                registros = list(self.db.DEVOLUCAO.find().limit(10))
+                registros = list(colecao.find().limit(10))
                 if registros:
                     return self._formatar_como_tabela(
                         dados=registros,
                         colunas=['DATA_DEVOLUCAO', 'DIFERENCA_VALOR', 'IDORCAMENTO_NOVO', 'IDUSUARIO', 'ID_DEVOLUCAO', 'LOJA', 'SKU', 'TIPOMOVIMENTACAO', 'VALORDEVPRODUTO', 'VALORVENDAPRODUTO', '_id'],
-                        titulo="Amostra de Dados da Coleção DEVOLUCAO",
+                        titulo=f"Amostra de Dados da Coleção {colecao_nome}",
                         formata_dados=lambda i, item: [
                             item.get('DATA_DEVOLUCAO', 'N/A'),
                             str(item.get('DIFERENCA_VALOR', 'N/A')),
@@ -637,6 +762,92 @@ Resposta em português:""",
         except Exception as e:
             print(f"❌ Erro na consulta direta: {e}")
             return None
+
+    def _analisar_inconsistencias(self) -> str:
+        """
+        Analisa inconsistências entre as coleções do banco de dados.
+        """
+        try:
+            # Buscar SKUs que aparecem em uma coleção mas não em outras
+            colecoes = ['DEVOLUCAO', 'CANCELAMENTO', 'AJUSTES ESTOQUE']
+            inconsistencias = []
+            
+            for colecao in colecoes:
+                if colecao in self.db.list_collection_names():
+                    skus = set()
+                    for doc in self.db[colecao].find({}, {"SKU": 1}):
+                        if 'SKU' in doc and doc['SKU']:
+                            skus.add(doc['SKU'])
+                    
+                    for sku in skus:
+                        # Verificar se SKU existe nas outras coleções
+                        outras_colecoes = [c for c in colecoes if c != colecao]
+                        for outra_colecao in outras_colecoes:
+                            if outra_colecao in self.db.list_collection_names():
+                                existe_na_outra = self.db[outra_colecao].count_documents({"SKU": sku}) > 0
+                                if not existe_na_outra:
+                                    inconsistencias.append({
+                                        'tipo': f'{colecao} sem {outra_colecao}',
+                                        'sku': sku,
+                                        'descricao': f'SKU {sku} existe em {colecao} mas não em {outra_colecao}'
+                                    })
+            
+            if inconsistencias:
+                # Limitar a 10 inconsistências para melhor visualização
+                inconsistencias_limitadas = inconsistencias[:10]
+                
+                html = f"""
+                <div style="margin: 20px 0; font-family: Arial, sans-serif;">
+                    <h3 style="color: #dc3545; margin-bottom: 15px; text-align: center;">⚠️ Inconsistências Encontradas</h3>
+                    <div style="overflow-x: auto;">
+                        <table style="width: 100%; border-collapse: collapse; background-color: white; box-shadow: 0 2px 4px rgba(0,0,0,0.1); border-radius: 8px; overflow: hidden;">
+                            <thead>
+                                <tr style="background-color: #f8d7da;">
+                                    <th style="padding: 12px 15px; text-align: left; font-weight: bold; color: #721c24; border-bottom: 2px solid #f5c6cb;">Tipo de Inconsistência</th>
+                                    <th style="padding: 12px 15px; text-align: left; font-weight: bold; color: #721c24; border-bottom: 2px solid #f5c6cb;">SKU</th>
+                                    <th style="padding: 12px 15px; text-align: left; font-weight: bold; color: #721c24; border-bottom: 2px solid #f5c6cb;">Descrição</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                """
+                
+                for i, item in enumerate(inconsistencias_limitadas):
+                    cor_linha = "#f8d7da" if i % 2 == 0 else "#f5c6cb"
+                    html += f"""
+                                <tr style="background-color: {cor_linha};">
+                                    <td style="padding: 10px 15px; border-bottom: 1px solid #f5c6cb; color: #721c24; font-weight: bold;">{item['tipo']}</td>
+                                    <td style="padding: 10px 15px; border-bottom: 1px solid #f5c6cb; color: #721c24; font-family: monospace;">{item['sku']}</td>
+                                    <td style="padding: 10px 15px; border-bottom: 1px solid #f5c6cb; color: #721c24;">{item['descricao']}</td>
+                                </tr>
+                    """
+                
+                html += f"""
+                            </tbody>
+                        </table>
+                    </div>
+                    <p style="margin-top: 10px; color: #6c757d; font-size: 14px; text-align: center;">
+                        <strong>Total de inconsistências encontradas:</strong> {len(inconsistencias)} | 
+                        <strong>Mostrando:</strong> {len(inconsistencias_limitadas)}
+                    </p>
+                </div>
+                """
+                
+                return html
+            else:
+                return """
+                <div style="margin: 20px 0; padding: 20px; background-color: #d4edda; border: 1px solid #c3e6cb; border-radius: 8px; text-align: center;">
+                    <h3 style="color: #155724; margin: 0;">✅ Nenhuma Inconsistência Encontrada</h3>
+                    <p style="color: #155724; margin: 10px 0 0 0;">Os dados estão consistentes entre todas as coleções.</p>
+                </div>
+                """
+                
+        except Exception as e:
+            return f"""
+            <div style="margin: 20px 0; padding: 20px; background-color: #f8d7da; border: 1px solid #f5c6cb; border-radius: 8px; text-align: center;">
+                <h3 style="color: #721c24; margin: 0;">❌ Erro na Análise</h3>
+                <p style="color: #721c24; margin: 10px 0 0 0;">Erro ao analisar inconsistências: {str(e)}</p>
+            </div>
+            """
 
     def _detectar_quantidade(self, pergunta: str) -> int:
         """
@@ -703,7 +914,9 @@ Resposta em português:""",
             
             dados_formatados = formata_dados(i, item)
             for dado in dados_formatados:
-                html += f'<td style="padding: 10px 15px; border-bottom: 1px solid #dee2e6; color: #495057;">{dado}</td>'
+                # Escapar caracteres especiais para HTML
+                dado_escaped = str(dado).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+                html += f'<td style="padding: 10px 15px; border-bottom: 1px solid #dee2e6; color: #495057;">{dado_escaped}</td>'
             
             html += '</tr>'
         
@@ -742,6 +955,7 @@ Resposta em português:""",
         """
         Faz consulta inteligente baseada na interpretação da pergunta.
         OTIMIZADO: Usa cache para consultas frequentes.
+        Agora funciona com qualquer coleção do banco.
         """
         try:
             # Verificar cache primeiro
@@ -750,9 +964,24 @@ Resposta em português:""",
             if resultado_cache:
                 return resultado_cache
             
+            # Detectar coleção relevante
+            pergunta = interpretacao.get('pergunta_original', '')
+            colecao_nome = self._detectar_colecao_relevante(pergunta)
+            if not colecao_nome:
+                return "Nenhuma coleção encontrada no banco de dados."
+            
+            colecao = self.db[colecao_nome]
+            
             tipo = interpretacao['tipo']
             quantidade = interpretacao['quantidade']
             formato_tabela = interpretacao['formato_tabela']
+            
+            # Se for pergunta sobre inconsistências, usar função específica
+            if tipo == 'inconsistencia':
+                resultado = self._analisar_inconsistencias()
+                if resultado:
+                    self._save_to_cache(cache_key, resultado)
+                    return resultado
             
             if tipo == 'top_sku':
                 pipeline = [
@@ -761,13 +990,13 @@ Resposta em português:""",
                     {"$sort": {"count": -1}},
                     {"$limit": quantidade}
                 ]
-                resultado = list(self.db.DEVOLUCAO.aggregate(pipeline))
+                resultado = list(colecao.aggregate(pipeline))
                 if resultado:
                     if formato_tabela:
                         resposta = self._formatar_como_tabela(
                             dados=resultado,
-                            colunas=['Posição', 'SKU', 'Quantidade de Devoluções'],
-                            titulo=f"Top {quantidade} SKUs Mais Frequentes",
+                            colunas=['Posição', 'SKU', 'Quantidade de Registros'],
+                            titulo=f"Top {quantidade} SKUs Mais Frequentes - Coleção {colecao_nome}",
                             formata_dados=lambda i, item: [
                                 i + 1,
                                 item['_id'] if item['_id'] else 'N/A',
@@ -777,11 +1006,11 @@ Resposta em português:""",
                         self._save_to_cache(cache_key, resposta)
                         return resposta
                     else:
-                        resposta = f"Os {quantidade} SKUs mais frequentes no banco são:\n\n"
+                        resposta = f"Os {quantidade} SKUs mais frequentes na coleção **{colecao_nome}** são:\n\n"
                         for i, item in enumerate(resultado, 1):
                             sku = item['_id'] if item['_id'] else 'N/A'
                             count = item['count']
-                            resposta += f"{i}. **SKU {sku}**: {count:,} devoluções\n"
+                            resposta += f"{i}. **SKU {sku}**: {count:,} registros\n"
                         self._save_to_cache(cache_key, resposta)
                         return resposta
                 else:
@@ -796,13 +1025,13 @@ Resposta em português:""",
                     {"$sort": {"count": -1}},
                     {"$limit": quantidade}
                 ]
-                resultado = list(self.db.DEVOLUCAO.aggregate(pipeline))
+                resultado = list(colecao.aggregate(pipeline))
                 if resultado:
                     if formato_tabela:
                         resposta = self._formatar_como_tabela(
                             dados=resultado,
-                            colunas=['Posição', 'Loja', 'Quantidade de Devoluções'],
-                            titulo=f"Top {quantidade} Lojas Mais Frequentes",
+                            colunas=['Posição', 'Loja', 'Quantidade de Registros'],
+                            titulo=f"Top {quantidade} Lojas Mais Frequentes - Coleção {colecao_nome}",
                             formata_dados=lambda i, item: [
                                 i + 1,
                                 item['_id'] if item['_id'] else 'N/A',
@@ -812,11 +1041,11 @@ Resposta em português:""",
                         self._save_to_cache(cache_key, resposta)
                         return resposta
                     else:
-                        resposta = f"As {quantidade} lojas mais frequentes no banco são:\n\n"
+                        resposta = f"As {quantidade} lojas mais frequentes na coleção **{colecao_nome}** são:\n\n"
                         for i, item in enumerate(resultado, 1):
                             loja = item['_id'] if item['_id'] else 'N/A'
                             count = item['count']
-                            resposta += f"{i}. **Loja {loja}**: {count:,} devoluções\n"
+                            resposta += f"{i}. **Loja {loja}**: {count:,} registros\n"
                         self._save_to_cache(cache_key, resposta)
                         return resposta
                 else:
@@ -831,13 +1060,13 @@ Resposta em português:""",
                     {"$sort": {"count": -1}},
                     {"$limit": quantidade}
                 ]
-                resultado = list(self.db.DEVOLUCAO.aggregate(pipeline))
+                resultado = list(colecao.aggregate(pipeline))
                 if resultado:
                     if formato_tabela:
                         resposta = self._formatar_como_tabela(
                             dados=resultado,
-                            colunas=['Posição', 'ID Usuário', 'Quantidade de Devoluções'],
-                            titulo=f"Top {quantidade} Usuários Mais Frequentes",
+                            colunas=['Posição', 'ID Usuário', 'Quantidade de Registros'],
+                            titulo=f"Top {quantidade} Usuários Mais Frequentes - Coleção {colecao_nome}",
                             formata_dados=lambda i, item: [
                                 i + 1,
                                 item['_id'] if item['_id'] else 'N/A',
@@ -847,11 +1076,11 @@ Resposta em português:""",
                         self._save_to_cache(cache_key, resposta)
                         return resposta
                     else:
-                        resposta = f"Os {quantidade} usuários mais frequentes no banco são:\n\n"
+                        resposta = f"Os {quantidade} usuários mais frequentes na coleção **{colecao_nome}** são:\n\n"
                         for i, item in enumerate(resultado, 1):
                             usuario = item['_id'] if item['_id'] else 'N/A'
                             count = item['count']
-                            resposta += f"{i}. **Usuário {usuario}**: {count:,} devoluções\n"
+                            resposta += f"{i}. **Usuário {usuario}**: {count:,} registros\n"
                         self._save_to_cache(cache_key, resposta)
                         return resposta
                 else:
@@ -860,8 +1089,8 @@ Resposta em português:""",
                     return resultado
             
             elif tipo == 'contagem_total':
-                total = self.db.DEVOLUCAO.count_documents({})
-                resultado = f"O banco de dados possui **{total:,}** registros de devolução."
+                total = colecao.count_documents({})
+                resultado = f"A coleção **{colecao_nome}** possui **{total:,}** registros."
                 self._save_to_cache(cache_key, resultado)
                 return resultado
             

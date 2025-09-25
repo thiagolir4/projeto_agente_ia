@@ -1,240 +1,197 @@
-# 🤖 Agente IA - Análise de Dados MongoDB
+# 🤖 Sistema de Análise Inteligente de Dados
 
-Sistema inteligente para análise de dados com interface web, chat conversacional e integração com MongoDB.
+Um sistema que permite analisar dados de forma inteligente através de uma interface web simples e um assistente de IA conversacional.
 
-## ✨ Funcionalidades
+## ✨ O que este sistema faz?
 
-- 📊 **Importação de arquivos CSV** - Upload e processamento de dados
-- 🤖 **Chat inteligente com IA** - Análise conversacional dos dados
-- 📈 **Análise em tempo real** - Consultas diretas ao MongoDB
-- ⚡ **Performance otimizada** - Cache e índices para velocidade
-- 🎨 **Interface moderna** - Design responsivo e intuitivo
-- 🔍 **Consultas inteligentes** - Interpretação natural de perguntas
+Este sistema foi criado para facilitar a análise de dados para pessoas que não têm conhecimento técnico avançado. Com ele você pode:
 
-## 🚀 Tecnologias
+- 📊 **Importar dados** de arquivos CSV ou planilhas do Google Sheets
+- 🤖 **Conversar com uma IA** que entende suas perguntas em linguagem natural
+- 📈 **Visualizar dados** em tabelas organizadas
+- 💡 **Obter insights** automaticamente dos seus dados
 
-### Backend
+## 🔄 Como funciona?
 
-- **Python 3.11** - Linguagem principal
-- **Flask** - Framework web
-- **MongoDB** - Banco de dados NoSQL
-- **LangChain** - Framework para IA
-- **OpenAI** - Modelo de linguagem
-- **FAISS** - Busca vetorial
-- **Pandas** - Manipulação de dados
+1. 📤 **Você importa seus dados** (arquivos CSV ou links do Google Sheets)
+2. 🗄️ **O sistema organiza tudo** no banco de dados
+3. 💬 **Você faz perguntas** como "Quais são os produtos mais vendidos?"
+4. 🧠 **A IA analisa e responde** de forma clara e objetiva
 
-### Frontend
+## 📋 O que você precisa para usar?
 
-- **HTML5/CSS3** - Interface web
-- **JavaScript** - Interatividade
-- **Bootstrap** - Design responsivo
+### Pré-requisitos básicos:
 
-## 📋 Pré-requisitos
+- 🐍 **Python 3.11 ou superior** (linguagem de programação)
+- 🍃 **MongoDB** (banco de dados para armazenar seus dados)
+- 🔑 **Chave da API OpenAI** (para o assistente de IA funcionar)
 
-- Python 3.11+
-- MongoDB
-- Chave da API OpenAI
+### Como obter o que precisa:
 
-## 🚀 Instalação e Execução
+🐍 **Python**: Baixe em [python.org](https://www.python.org/downloads/)
 
-### 1. Clone o repositório
+🍃 **MongoDB**: Baixe em [mongodb.com](https://www.mongodb.com/try/download/community)
+
+🔑 **Chave OpenAI**: Crie uma conta em [openai.com](https://openai.com) e gere uma API key
+
+## 🚀 Instalação passo a passo
+
+### 1. 📥 Baixe o projeto
 
 ```bash
-git clone https://github.com/thiagolir4/projeto_agente_ia.git
+git clone https://github.com/seu-usuario/projeto_agente_ia.git
 cd projeto_agente_ia
 ```
 
-### 2. Instale as dependências
+### 2. 📦 Instale as dependências
 
 ```bash
-pip install -r backend/requirements.txt
+pip install -r requirements.txt
 ```
 
-### 3. Configure as variáveis de ambiente
+### 3. ⚙️ Configure as variáveis de ambiente
 
-```bash
-# Crie um arquivo .env na raiz do projeto
+Crie um arquivo chamado `.env` na pasta principal do projeto com o seguinte conteúdo:
+
+```
 OPENAI_API_KEY=sua_chave_openai_aqui
 MONGO_URI=mongodb://localhost:27017/
 DB_NAME=dbGrupoOscar
 ```
 
-### 4. Inicie o MongoDB
+### 4. 🍃 Inicie o MongoDB
+
+**Windows:**
 
 ```bash
-# Windows
 net start MongoDB
+```
 
-# Linux/Mac
+**Linux/Mac:**
+
+```bash
 sudo systemctl start mongod
 ```
 
-### 5. Execute a aplicação
+### 5. ▶️ Execute a aplicação
 
 ```bash
 python main.py
 ```
 
-### 6. Acesse a aplicação
+### 6. 🌐 Acesse no navegador
 
-- **Interface Web**: http://localhost:5000
-- **MongoDB**: localhost:27017
+Abra seu navegador e vá para: `http://localhost:5000`
 
-## 🐳 Docker (Recomendado)
+## 💻 Como usar o sistema
 
-### 1. Execute com Docker Compose
+### 📊 Importando dados
 
-```bash
-docker-compose up -d
-```
+1. Na página principal, você verá uma seção "Importação de CSV"
+2. Você pode:
+   - 🔗 **Colar um link** do Google Sheets
+   - 📁 **Enviar um arquivo CSV** do seu computador
+3. Clique em "Importar" e aguarde a importação
 
-### 2. Acesse a aplicação
+### 🤖 Conversando com a IA
 
-- **Interface Web**: http://localhost:5000
+1. Na seção "Chat com Agente IA", digite sua pergunta
+2. Exemplos de perguntas que você pode fazer:
+   - 📈 "Quantos registros temos no total?"
+   - 🏆 "Quais são os top 5 produtos mais frequentes?"
+   - 🏪 "Mostre as lojas com mais movimentações"
+   - 👥 "Quantos usuários únicos existem?"
+   - 💰 "Qual o valor total das devoluções?"
 
-## 📊 Como Usar
+### 👁️ Visualizando dados
 
-### 1. **Importar Dados**
+1. Na lista "Coleções existentes", clique no nome da sua coleção
+2. Você verá uma tabela com todos os dados importados
+3. Use a paginação para navegar entre os registros
 
-- Acesse a interface web
-- Clique em "Escolher arquivo"
-- Selecione um arquivo CSV
-- Clique em "Importar para MongoDB"
+## 💬 Exemplos de perguntas que você pode fazer
 
-### 2. **Chat com IA**
+### 📊 Análise geral:
 
-- Use a interface de chat
-- Faça perguntas sobre os dados
-- Exemplos:
-  - "Quais são os top 5 SKUs mais frequentes?"
-  - "Mostre as lojas com mais devoluções"
-  - "Quantos usuários únicos existem?"
+- 📈 "Quantos registros temos?"
+- 📋 "Quais colunas existem nos dados?"
+- 📝 "Mostre um resumo dos dados"
 
-### 3. **Visualizar Dados**
+### 🛍️ Análise de produtos:
 
-- Clique em "Ver Coleção"
-- Visualize os dados importados
-- Navegue pelos registros
+- 🏆 "Quais são os produtos mais vendidos?"
+- 🔢 "Quantos tipos diferentes de produtos temos?"
+- 📊 "Mostre os produtos com mais movimentações"
 
-## 🔧 Configuração Avançada
+### 🏪 Análise de lojas:
 
-### Variáveis de Ambiente
+- 🥇 "Qual loja tem mais movimentações?"
+- 🏢 "Quantas lojas diferentes temos?"
+- 📈 "Mostre o ranking das lojas por volume"
 
-```bash
-# MongoDB
-MONGO_URI=mongodb://localhost:27017/
-DB_NAME=dbGrupoOscar
+### 👥 Análise de usuários:
 
-# OpenAI
-OPENAI_API_KEY=sua_chave_aqui
+- 🔢 "Quantos usuários únicos temos?"
+- 👤 "Quais usuários fazem mais movimentações?"
+- ⭐ "Mostre os usuários mais ativos"
 
-# Aplicação
-FLASK_ENV=development
-FLASK_DEBUG=True
-```
-
-### Índices MongoDB
-
-O sistema cria automaticamente índices para otimizar consultas:
-
-- SKU
-- LOJA
-- IDUSUARIO
-- DATA_DEVOLUCAO
-- TIPOMOVIMENTACAO
-- DIFERENCA_VALOR
-
-## 📁 Estrutura do Projeto
+## 📁 Estrutura do projeto
 
 ```
 projeto_agente_ia/
-├── main.py                    # Aplicação Flask principal
-├── backend/
-│   ├── app/
-│   │   ├── agents/           # Agente IA
-│   │   │   └── mongodb_agent.py
-│   │   ├── database/         # Configuração MongoDB
-│   │   │   └── db_config.py
-│   │   ├── modules/          # Módulos de importação
-│   │   │   └── importar_csv.py
-│   │   ├── errors/           # Tratamento de erros
-│   │   └── utils/            # Utilitários
-│   └── requirements.txt      # Dependências Python
-├── frontend/
-│   ├── templates/            # Templates HTML
-│   │   ├── index.html
-│   │   └── colecao.html
-│   └── static/              # CSS, JS, imagens
-│       └── style.css
-├── Dockerfile               # Imagem Docker
-├── docker-compose.yml       # Orquestração
-└── README.md               # Este arquivo
+├── main.py                    # Arquivo principal da aplicação
+├── requirements.txt           # Lista de dependências
+├── backend/                   # Código do servidor
+│   └── app/
+│       ├── agents/           # Assistente de IA
+│       ├── database/         # Configuração do banco
+│       ├── modules/          # Funcionalidades principais
+│       └── utils/            # Ferramentas auxiliares
+└── frontend/                 # Interface web
+    ├── templates/            # Páginas HTML
+    └── static/               # Estilos CSS
 ```
 
-## 🎯 Exemplos de Uso
+## 🔧 Resolvendo problemas comuns
 
-### Consultas Inteligentes
+### ❌ Erro: "MongoDB não está rodando"
 
-- "Quais são os top 10 SKUs mais frequentes?"
-- "Mostre as lojas com mais devoluções em formato de tabela"
-- "Quantos registros existem no banco?"
-- "Quais usuários fazem mais devoluções?"
+**✅ Solução:** Inicie o MongoDB:
 
-### Análise de Dados
+- Windows: `net start MongoDB`
+- Linux/Mac: `sudo systemctl start mongod`
 
-- Frequência de SKUs
-- Análise por loja
-- Análise por usuário
-- Análise temporal
-- Valores de devolução
+### 🔑 Erro: "Chave da OpenAI inválida"
 
-## 🐛 Troubleshooting
+**✅ Solução:**
 
-### Erro de conexão MongoDB
+1. Verifique se a chave está correta no arquivo `.env`
+2. Confirme se você tem créditos na conta OpenAI
+
+### 📦 Erro: "Dependências não encontradas"
+
+**✅ Solução:** Reinstale as dependências:
 
 ```bash
-# Verificar se MongoDB está rodando
-net start MongoDB  # Windows
-sudo systemctl start mongod  # Linux
+pip install -r requirements.txt --force-reinstall
 ```
 
-### Erro OpenAI API
+### 🌐 Erro: "Porta 5000 já está em uso"
 
-- Verifique se a chave está correta
-- Verifique se tem créditos na conta
+**✅ Solução:**
 
-### Erro de dependências
+1. Feche outros programas que possam estar usando a porta 5000
+2. Ou mude a porta no arquivo `main.py`
 
-```bash
-# Reinstalar dependências
-pip install -r backend/requirements.txt --force-reinstall
-```
+## 🛠️ Tecnologias utilizadas
 
-## 🤝 Contribuição
-
-1. Faça um fork do projeto
-2. Crie uma branch para sua feature
-3. Commit suas mudanças
-4. Push para a branch
-5. Abra um Pull Request
+- 🐍 **Python**: Linguagem principal
+- 🌐 **Flask**: Framework para criar a interface web
+- 🍃 **MongoDB**: Banco de dados para armazenar os dados
+- 🤖 **OpenAI**: API para o assistente de IA
+- 📊 **Pandas**: Para processar arquivos CSV
+- 🎨 **Bootstrap**: Para o design da interface
 
 ## 📄 Licença
 
-Este projeto está sob a licença MIT.
-
-## 👨‍💻 Autor
-
-**Thiago Lira**
-
-- GitHub: [@thiagolir4](https://github.com/thiagolir4)
-
-## 🙏 Agradecimentos
-
-- OpenAI pela API de linguagem
-- MongoDB pela base de dados
-- LangChain pelo framework de IA
-- Flask pela simplicidade do backend
-
----
-
-**⭐ Se este projeto te ajudou, considere dar uma estrela!**
+Este projeto está sob a licença MIT, o que significa que você pode usar, modificar e distribuir livremente.

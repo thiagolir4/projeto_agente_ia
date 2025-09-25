@@ -1,9 +1,44 @@
 import requests
-import json
 from io import StringIO
 import pandas as pd
 import re
 from urllib.parse import urlparse, parse_qs
+
+
+def corrigir_encoding_dataframe(df):
+    """
+    Corrige problemas de encoding em DataFrames, especialmente caracteres acentuados
+    """
+    correcoes = {
+        'Sa?a': 'Saída',
+        'Entrada': 'Entrada',
+        '?': 'ã',
+        '?': 'á',
+        '?': 'é',
+        '?': 'í',
+        '?': 'ó',
+        '?': 'ú',
+        '?': 'â',
+        '?': 'ê',
+        '?': 'ô',
+        '?': 'ç',
+        '?': 'À',
+        '?': 'É',
+        '?': 'Í',
+        '?': 'Ó',
+        '?': 'Ú',
+        '?': 'Â',
+        '?': 'Ê',
+        '?': 'Ô',
+        '?': 'Ç'
+    }
+    
+    for coluna in df.columns:
+        if df[coluna].dtype == 'object':
+            for char_errado, char_correto in correcoes.items():
+                df[coluna] = df[coluna].astype(str).str.replace(char_errado, char_correto, regex=False)
+    
+    return df
 
 
 def detectar_delimitador(texto):
@@ -12,7 +47,6 @@ def detectar_delimitador(texto):
     """
     primeira_linha = texto.split("\n", 1)[0]
     if ";" in primeira_linha and "," in primeira_linha:
-        # Escolher pelo mais frequente
         return ";" if primeira_linha.count(";") > primeira_linha.count(",") else ","
     elif ";" in primeira_linha:
         return ";"
@@ -29,14 +63,10 @@ def ajustar_link_google_sheets(url):
         sheet_id = url.split("/d/")[1].split("/")[0]
         parsed = urlparse(url)
         qs = parse_qs(parsed.query)
-        gid = qs.get("gid", ["0"])[0]  # se não tiver gid, pega a primeira aba
+        gid = qs.get("gid", ["0"])[0]
         return f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}", sheet_id, gid
     return url, None, None
 
-
-import requests
-import re
-import json
 
 def obter_nome_planilha_google_sheets(sheet_id, gid="0"):
     """
@@ -46,12 +76,10 @@ def obter_nome_planilha_google_sheets(sheet_id, gid="0"):
     resp = requests.get(url)
     resp.raise_for_status()
 
-    # Tenta pegar pelo docs-title-input
     match = re.search(r'class="docs-title-input"[^>]*value="([^"]+)"', resp.text)
     if match:
         return match.group(1).strip().replace(" ", "_")
 
-    # Fallback: usa <title>
     match = re.search(r"<title>(.*?) - Google Sheets</title>", resp.text)
     if match:
         return match.group(1).strip().replace(" ", "_")
@@ -69,17 +97,20 @@ def carregar_csv(caminho_csv):
         
         # Ajustar se for Google Sheets
         url, sheet_id, gid = ajustar_link_google_sheets(caminho_csv)
-        print(f"🌐 Baixando CSV da URL: {url}")
+        print(f"Baixando CSV da URL: {url}")
         resp = requests.get(url)
         resp.raise_for_status()
 
         delimitador = detectar_delimitador(resp.text)
-        print(f"📑 Delimitador detectado: '{delimitador}'")
+        print(f"Delimitador detectado: '{delimitador}'")
 
         data = StringIO(resp.text)
-        df = pd.read_csv(data, sep=delimitador, encoding="cp1252", dtype=str)
-
-        # Nome da coleção: nome da aba no Google Sheets
+        try:
+            df = pd.read_csv(data, sep=delimitador, encoding="utf-8", dtype=str)
+        except UnicodeDecodeError:
+            data = StringIO(resp.text)
+            df = pd.read_csv(data, sep=delimitador, encoding="cp1252", dtype=str)
+            df = corrigir_encoding_dataframe(df)
         if sheet_id:
             nome_colecao = obter_nome_planilha_google_sheets(sheet_id)
         else:
@@ -87,12 +118,22 @@ def carregar_csv(caminho_csv):
 
 
     else:
-        print(f"📂 Lendo CSV local: {caminho_csv}")
-        with open(caminho_csv, "r", encoding="cp1252") as f:
-            conteudo = f.read()
+        print(f"Lendo CSV local: {caminho_csv}")
+        try:
+            with open(caminho_csv, "r", encoding="utf-8") as f:
+                conteudo = f.read()
+        except UnicodeDecodeError:
+            with open(caminho_csv, "r", encoding="cp1252") as f:
+                conteudo = f.read()
+        
         delimitador = detectar_delimitador(conteudo)
-        print(f"📑 Delimitador detectado: '{delimitador}'")
-        df = pd.read_csv(StringIO(conteudo), sep=delimitador, encoding="cp1252", dtype=str)
+        print(f"Delimitador detectado: '{delimitador}'")
+        
+        try:
+            df = pd.read_csv(StringIO(conteudo), sep=delimitador, encoding="utf-8", dtype=str)
+        except UnicodeDecodeError:
+            df = pd.read_csv(StringIO(conteudo), sep=delimitador, encoding="cp1252", dtype=str)
+            df = corrigir_encoding_dataframe(df)
         nome_colecao = caminho_csv.split("/")[-1].replace(".csv", "")
 
     return df, nome_colecao
