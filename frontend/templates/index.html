@@ -48,6 +48,88 @@
         background-color: white !important;
       }
 
+      /* Estilos específicos para relatórios de fraude */
+      .message-content .fraud-report {
+        font-family: Arial, sans-serif !important;
+        line-height: 1.6 !important;
+      }
+
+      .message-content .fraud-header {
+        background: linear-gradient(135deg, #dc3545, #c82333) !important;
+        color: white !important;
+        padding: 25px !important;
+        border-radius: 10px !important;
+        text-align: center !important;
+        margin-bottom: 25px !important;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1) !important;
+      }
+
+      .message-content .fraud-summary {
+        background-color: #f8f9fa !important;
+        padding: 20px !important;
+        border-radius: 8px !important;
+        margin-bottom: 25px !important;
+        border-left: 5px solid #007bff !important;
+      }
+
+      .message-content .fraud-types {
+        background-color: #fff3cd !important;
+        padding: 20px !important;
+        border-radius: 8px !important;
+        margin-bottom: 25px !important;
+        border-left: 5px solid #ffc107 !important;
+      }
+
+      .message-content .fraud-recommendations {
+        background-color: #d1ecf1 !important;
+        padding: 20px !important;
+        border-radius: 8px !important;
+        margin-bottom: 25px !important;
+        border-left: 5px solid #17a2b8 !important;
+      }
+
+      .message-content .fraud-details {
+        background-color: #f8f9fa !important;
+        padding: 20px !important;
+        border-radius: 8px !important;
+        margin-bottom: 25px !important;
+      }
+
+      .message-content .fraud-footer {
+        background-color: #e9ecef !important;
+        padding: 15px !important;
+        border-radius: 8px !important;
+        text-align: center !important;
+        color: #6c757d !important;
+        font-size: 14px !important;
+      }
+
+      .message-content .stat-card {
+        background: white !important;
+        padding: 15px !important;
+        border-radius: 6px !important;
+        text-align: center !important;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
+      }
+
+      .message-content .risk-high {
+        background: #dc3545 !important;
+        color: white !important;
+        padding: 4px 8px !important;
+        border-radius: 4px !important;
+        font-weight: bold !important;
+        font-size: 12px !important;
+      }
+
+      .message-content .risk-medium {
+        background: #ffc107 !important;
+        color: white !important;
+        padding: 4px 8px !important;
+        border-radius: 4px !important;
+        font-weight: bold !important;
+        font-size: 12px !important;
+      }
+
       .message-content h3 {
         color: #333 !important;
         margin-bottom: 15px !important;
@@ -295,6 +377,9 @@
         });
 
       function addMessage(sender, text, type, isLoading = false) {
+        // Garantir que text seja sempre uma string válida
+        text = (text || "").toString();
+
         const messagesContainer = document.getElementById("chat-messages");
         const messageId =
           "msg_" + Date.now() + "_" + Math.random().toString(36).substr(2, 9);
@@ -312,16 +397,47 @@
             ? "alert-danger"
             : "alert-success";
 
-        messageDiv.innerHTML = `
-        <div class="alert ${alertClass} d-inline-block" style="max-width: 80%;">
-          <strong>${sender}:</strong> <span class="message-content">${text}</span>
-          ${
-            isLoading
-              ? '<div class="spinner-border spinner-border-sm ms-2" role="status"></div>'
-              : ""
+        // Verificar se o texto contém HTML
+        const isHTML =
+          text &&
+          (text.includes("```html") ||
+            text.includes("<div") ||
+            text.includes("<table") ||
+            text.includes("<h1") ||
+            text.includes("<h2") ||
+            text.includes("<h3"));
+
+        if (isHTML) {
+          // Se for HTML, limpar os marcadores e renderizar diretamente
+          let cleanText = text || "";
+          if (text && text.includes("```html")) {
+            cleanText = text.replace(/```html\s*/, "").replace(/\s*```$/, "");
           }
-        </div>
-      `;
+
+          messageDiv.innerHTML = `
+            <div class="alert ${alertClass} d-inline-block" style="max-width: 100%; width: 100%;">
+              <strong>${sender}:</strong>
+              <div class="message-content mt-2">${cleanText}</div>
+              ${
+                isLoading
+                  ? '<div class="spinner-border spinner-border-sm ms-2" role="status"></div>'
+                  : ""
+              }
+            </div>
+          `;
+        } else {
+          // Se for texto simples, usar o formato original
+          messageDiv.innerHTML = `
+            <div class="alert ${alertClass} d-inline-block" style="max-width: 80%;">
+              <strong>${sender}:</strong> <span class="message-content">${text}</span>
+              ${
+                isLoading
+                  ? '<div class="spinner-border spinner-border-sm ms-2" role="status"></div>'
+                  : ""
+              }
+            </div>
+          `;
+        }
 
         messagesContainer.appendChild(messageDiv);
 

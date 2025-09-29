@@ -10,6 +10,7 @@ Este sistema foi criado para facilitar a análise de dados para pessoas que não
 - 🤖 **Conversar com uma IA** que entende suas perguntas em linguagem natural
 - 📈 **Visualizar dados** em tabelas organizadas
 - 💡 **Obter insights** automaticamente dos seus dados
+- 🚨 **Detectar fraudes** com algoritmos avançados de análise
 
 ## 🔄 Como funciona?
 
@@ -17,6 +18,7 @@ Este sistema foi criado para facilitar a análise de dados para pessoas que não
 2. 🗄️ **O sistema organiza tudo** no banco de dados
 3. 💬 **Você faz perguntas** como "Quais são os produtos mais vendidos?"
 4. 🧠 **A IA analisa e responde** de forma clara e objetiva
+5. 🚨 **Detecta fraudes automaticamente** quando solicitado
 
 ## 📋 O que você precisa para usar?
 
@@ -97,11 +99,13 @@ Abra seu navegador e vá para: `http://localhost:5000`
 
 1. Na seção "Chat com Agente IA", digite sua pergunta
 2. Exemplos de perguntas que você pode fazer:
-   - 📈 "Quantos registros temos no total?"
-   - 🏆 "Quais são os top 5 produtos mais frequentes?"
-   - 🏪 "Mostre as lojas com mais movimentações"
-   - 👥 "Quantos usuários únicos existem?"
-   - 💰 "Qual o valor total das devoluções?"
+   - 📊 "top 10 lojas mais frequentes em devolução"
+   - 🏆 "top 5 produtos mais devolvidos"
+   - 📅 "quantas devoluções aconteceram no dia 15/01/2025"
+   - 🏪 "top 20 lojas com mais ajustes de estoque"
+   - 👥 "top 15 usuários que mais cancelam"
+   - 🚨 "faça uma análise de fraude"
+   - 📋 "mostre as top 10 lojas em formato de tabela"
 
 ### 👁️ Visualizando dados
 
@@ -111,29 +115,64 @@ Abra seu navegador e vá para: `http://localhost:5000`
 
 ## 💬 Exemplos de perguntas que você pode fazer
 
-### 📊 Análise geral:
+### 📊 **Rankings e Contagens (100% funcionais):**
 
-- 📈 "Quantos registros temos?"
-- 📋 "Quais colunas existem nos dados?"
-- 📝 "Mostre um resumo dos dados"
+- 🏆 "top 10 lojas mais frequentes em devolução"
+- 📦 "top 5 produtos mais devolvidos"
+- 👥 "top 20 usuários que mais cancelam"
+- 🏪 "top 15 lojas com mais ajustes de estoque"
+- 📊 "quantos registros existem na coleção de devolução"
 
-### 🛍️ Análise de produtos:
+### 📅 **Consultas por Data (100% funcionais):**
 
-- 🏆 "Quais são os produtos mais vendidos?"
-- 🔢 "Quantos tipos diferentes de produtos temos?"
-- 📊 "Mostre os produtos com mais movimentações"
+- 📅 "quantas devoluções aconteceram no dia 15/01/2025"
+- 📊 "quantos cancelamentos entre 10/01 e 20/01/2025"
+- 📈 "quantos ajustes de estoque no dia 25/01/2025"
+- 📋 "quantas devoluções entre 01/01 e 31/01/2025"
 
-### 🏪 Análise de lojas:
+### 📋 **Formatos de Resposta (100% funcionais):**
 
-- 🥇 "Qual loja tem mais movimentações?"
-- 🏢 "Quantas lojas diferentes temos?"
-- 📈 "Mostre o ranking das lojas por volume"
+- 📊 "mostre as top 10 lojas em devolução em formato de tabela"
+- 📦 "top 5 produtos mais frequentes em tabela"
+- 🏪 "ranking das 15 lojas com mais cancelamentos em formato de tabela"
 
-### 👥 Análise de usuários:
+### 🚨 **Detecção de Fraude (100% funcional):**
 
-- 🔢 "Quantos usuários únicos temos?"
-- 👤 "Quais usuários fazem mais movimentações?"
-- ⭐ "Mostre os usuários mais ativos"
+- 🔍 "faça uma análise de fraude"
+- 🚨 "relatório de fraude"
+- 📊 "análise de fraude"
+- 🔎 "detectar fraude"
+- ⚠️ "verificar suspeitas"
+
+### 🎯 **Diferentes Quantidades (1, 3, 5, 10, 15, 20, 50, 100):**
+
+- 🥇 "top 1 loja mais frequente em devolução"
+- 🏆 "top 3 produtos mais devolvidos"
+- 📊 "top 50 usuários que mais cancelam"
+- 🏪 "top 100 lojas com mais ajustes de estoque"
+
+## ⚠️ **Limitações Atuais do Agente**
+
+O agente atual é **excelente** para análises básicas, mas **NÃO possui** as seguintes funcionalidades avançadas:
+
+### ❌ **Funcionalidades NÃO disponíveis:**
+- Análise de correlação entre variáveis
+- Análise temporal avançada (dias da semana, horários)
+- Análise de risco e anomalias
+- Análise financeira (impacto de valores)
+- Detecção de padrões suspeitos
+- Análise de tendências e sazonalidade
+- Machine Learning para classificação
+
+### ✅ **O que funciona perfeitamente:**
+- Rankings simples (top N)
+- Contagens por data específica
+- Contagens por período
+- Consultas básicas de coleções
+- Detecção de fraude (algoritmos implementados)
+- Formatação em tabelas
+
+**💡 Dica:** Use as perguntas listadas acima para obter os melhores resultados!
 
 ## 📁 Estrutura do projeto
 
@@ -141,14 +180,24 @@ Abra seu navegador e vá para: `http://localhost:5000`
 projeto_agente_ia/
 ├── main.py                    # Arquivo principal da aplicação
 ├── requirements.txt           # Lista de dependências
+├── README.md                  # Documentação principal
+├── DETECCAO_FRAUDE.md         # Documentação do sistema de fraude
+├── DOCUMENTACAO_TECNICA.md    # Documentação técnica detalhada
 ├── backend/                   # Código do servidor
 │   └── app/
 │       ├── agents/           # Assistente de IA
+│       │   └── mongodb_agent.py  # Agente principal com IA
 │       ├── database/         # Configuração do banco
+│       │   └── db_config.py  # Configurações do MongoDB
 │       ├── modules/          # Funcionalidades principais
+│       │   ├── detector_fraude.py  # Sistema de detecção de fraude
+│       │   ├── importar_csv.py     # Importação de dados CSV
+│       │   └── historico_conversas.py  # Sistema de histórico
 │       └── utils/            # Ferramentas auxiliares
+│           └── utils.py      # Utilitários gerais
 └── frontend/                 # Interface web
     ├── templates/            # Páginas HTML
+    │   └── index.html        # Página principal
     └── static/               # Estilos CSS
 ```
 
@@ -183,6 +232,36 @@ pip install -r requirements.txt --force-reinstall
 1. Feche outros programas que possam estar usando a porta 5000
 2. Ou mude a porta no arquivo `main.py`
 
+## 🚨 Sistema de Detecção de Fraude
+
+O sistema inclui algoritmos avançados para detectar possíveis fraudes nos dados:
+
+### 🔍 Tipos de fraude detectados:
+
+1. **Volume anômalo de devoluções**: Identifica produtos com devoluções acima do normal
+2. **Movimentações suspeitas em curto intervalo**: Detecta movimentações suspeitas em curto espaço de tempo
+3. **Cliente reincidente em trocas/divergências**: Identifica clientes com histórico de problemas
+4. **Produto reincidente em trocas/divergências**: Detecta produtos com padrões suspeitos recorrentes
+
+### 📊 Relatórios de fraude:
+
+- **Níveis de risco**: ALTO e MÉDIO
+- **Resumo executivo** com estatísticas detalhadas
+- **Formatação HTML rica** com cores e tabelas organizadas
+- **Detalhes completos** de cada suspeita encontrada
+- **Download Excel** para análise posterior
+
+### 💡 Como usar:
+
+Simplesmente digite no chat:
+
+- "faça uma analise de fraude"
+- "relatorio de fraude"
+- "análise de fraude"
+- "detectar fraude"
+
+O sistema detecta automaticamente quando você menciona fraude e executa a análise completa em todas as coleções disponíveis.
+
 ## 🛠️ Tecnologias utilizadas
 
 - 🐍 **Python**: Linguagem principal
@@ -191,5 +270,7 @@ pip install -r requirements.txt --force-reinstall
 - 🤖 **OpenAI**: API para o assistente de IA
 - 📊 **Pandas**: Para processar arquivos CSV
 - 🎨 **Bootstrap**: Para o design da interface
-
-
+- 🚨 **Algoritmos de Detecção**: Para análise de fraude
+- 🔍 **LangChain**: Framework para integração com IA
+- 📈 **FAISS**: Para busca vetorial e similaridade
+- 📋 **OpenPyXL**: Para geração de relatórios Excel

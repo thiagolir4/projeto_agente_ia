@@ -11,26 +11,11 @@ def corrigir_encoding_dataframe(df):
     """
     correcoes = {
         'Sa?a': 'Saída',
-        'Entrada': 'Entrada',
-        '?': 'ã',
-        '?': 'á',
-        '?': 'é',
-        '?': 'í',
-        '?': 'ó',
-        '?': 'ú',
-        '?': 'â',
-        '?': 'ê',
-        '?': 'ô',
-        '?': 'ç',
-        '?': 'À',
-        '?': 'É',
-        '?': 'Í',
-        '?': 'Ó',
-        '?': 'Ú',
-        '?': 'Â',
-        '?': 'Ê',
-        '?': 'Ô',
-        '?': 'Ç'
+        'SA?DA': 'SAIDA',
+        'Entrada ': 'Entrada',
+        'NÃ£o	': 'Não',
+        'NÃ£o': 'Não'
+       
     }
     
     for coluna in df.columns:

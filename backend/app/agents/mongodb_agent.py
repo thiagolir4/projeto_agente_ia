@@ -6,6 +6,7 @@ Este agente consulta apenas dados existentes no MongoDB e responde em português
 import os
 import re
 from typing import List, Dict, Any, Optional, Tuple
+from datetime import datetime
 from pymongo import MongoClient
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_community.vectorstores import FAISS
@@ -14,6 +15,7 @@ from langchain.memory import ConversationBufferMemory
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 import json
+from modules.detector_fraude import DetectorFraude
 
 
 class MongoDBAgent:
@@ -39,6 +41,12 @@ class MongoDBAgent:
         # Cache para consultas frequentes
         self.cache_consultas = {}
         self.cache_max_size = 50  # Máximo 50 consultas em cache
+        
+        # Inicializar detector de fraude
+        self.detector_fraude = None
+        
+        # Conectar ao MongoDB
+        self.conectar_mongodb()
         
         # Dicionários de sinônimos e padrões para interpretação inteligente
         self.sinonimos = {
@@ -125,6 +133,44 @@ class MongoDBAgent:
                 r'quantidade\s+total',
                 r'número\s+total',
                 r'count\s+total'
+            ],
+            'analise_fraude': [
+                r'analise\s+de\s+fraude',
+                r'análise\s+de\s+fraude',
+                r'detectar\s+fraude',
+                r'detecção\s+de\s+fraude',
+                r'detectar\s+suspeitas',
+                r'detecção\s+de\s+suspeitas',
+                r'verificar\s+fraude',
+                r'verificar\s+suspeitas',
+                r'relatório\s+de\s+fraude',
+                r'relatório\s+de\s+suspeitas',
+                r'auditoria\s+de\s+fraude',
+                r'auditoria\s+de\s+suspeitas',
+                r'investigar\s+fraude',
+                r'investigar\s+suspeitas',
+                r'identificar\s+fraude',
+                r'identificar\s+suspeitas',
+                r'buscar\s+fraude',
+                r'buscar\s+suspeitas',
+                r'procurar\s+fraude',
+                r'procurar\s+suspeitas',
+                r'gerar\s+relatorio\s+de\s+fraude',
+                r'gerar\s+relatório\s+de\s+fraude',
+                r'relatorio\s+de\s+fraude',
+                r'relatório\s+de\s+fraude',
+                r'fraude',
+                r'suspeitas'
+            ],
+            'consulta_data_especifica': [
+                r'\d{1,2}/\d{1,2}(?:/\d{2,4})?'
+            ],
+            'consulta_periodo_datas': [
+                r'entre\s+o?\s*dia\s+\d{1,2}/\d{1,2}\s+até\s+dia\s+\d{1,2}/\d{1,2}',
+                r'de\s+\d{1,2}/\d{1,2}\s+até\s+\d{1,2}/\d{1,2}',
+                r'entre\s+\d{1,2}/\d{1,2}\s+e\s+\d{1,2}/\d{1,2}',
+                r'entre\s+os\s+dias\s+\d{1,2}/\d{1,2}\s+e\s+\d{1,2}/\d{1,2}',
+                r'entre\s+o\s+dia\s+\d{1,2}/\d{1,2}\s+e\s+\d{1,2}/\d{1,2}'
             ]
         }
         
@@ -133,14 +179,22 @@ class MongoDBAgent:
         Interpreta a pergunta do usuário e identifica o tipo de consulta.
         """
         pergunta_lower = pergunta.lower().strip()
-        print(f"🔍 Analisando pergunta: '{pergunta_lower}'")
+        print(f" Analisando pergunta: '{pergunta_lower}'")
         
         # Detectar tipo de pergunta com maior precisão
         tipo_pergunta = None
         quantidade = 10  # padrão
         
         # Verificar padrões específicos com prioridade
-        if any(palavra in pergunta_lower for palavra in ['inconsistência', 'inconsistencia', 'discrepância', 'discrepancia', 'problema', 'erro', 'dados inconsistentes', 'verificar dados']):
+        if any(palavra in pergunta_lower for palavra in ['quais dados', 'que dados', 'dados disponiveis', 'dados disponíveis', 'colecoes disponiveis', 'coleções disponíveis', 'tabelas disponiveis', 'tabelas disponíveis', 'o que tem', 'que tem', 'listar dados', 'mostrar dados', 'ver dados', 'acesso a dados']):
+            tipo_pergunta = "listar_colecoes"
+        elif any(palavra in pergunta_lower for palavra in ['analise de fraude', 'análise de fraude', 'detectar fraude', 'detecção de fraude', 'detectar suspeitas', 'detecção de suspeitas', 'verificar fraude', 'verificar suspeitas', 'relatório de fraude', 'relatório de suspeitas', 'auditoria de fraude', 'auditoria de suspeitas', 'investigar fraude', 'investigar suspeitas', 'identificar fraude', 'identificar suspeitas', 'buscar fraude', 'buscar suspeitas', 'procurar fraude', 'procurar suspeitas', 'gerar relatorio de fraude', 'gerar relatório de fraude', 'relatorio de fraude', 'relatório de fraude', 'fraude', 'suspeitas']):
+            tipo_pergunta = "analise_fraude"
+        elif re.search(r'entre\s+o?\s*dia\s+\d{1,2}/\d{1,2}(?:/\d{4})?\s+até\s+dia\s+\d{1,2}/\d{1,2}(?:/\d{4})?', pergunta_lower) or re.search(r'de\s+\d{1,2}/\d{1,2}(?:/\d{4})?\s+até\s+\d{1,2}/\d{1,2}(?:/\d{4})?', pergunta_lower) or re.search(r'entre\s+\d{1,2}/\d{1,2}(?:/\d{4})?\s+e\s+\d{1,2}/\d{1,2}(?:/\d{4})?', pergunta_lower) or re.search(r'entre\s+os\s+dias\s+\d{1,2}/\d{1,2}(?:/\d{4})?\s+e\s+\d{1,2}/\d{1,2}(?:/\d{4})?', pergunta_lower):
+            tipo_pergunta = "consulta_periodo_datas"
+        elif re.search(r'\d{1,2}/\d{1,2}(?:/\d{2,4})?', pergunta_lower):
+            tipo_pergunta = "consulta_data_especifica"
+        elif any(palavra in pergunta_lower for palavra in ['inconsistência', 'inconsistencia', 'discrepância', 'discrepancia', 'problema', 'erro', 'dados inconsistentes', 'verificar dados']):
             tipo_pergunta = "inconsistencia"
         elif any(palavra in pergunta_lower for palavra in ['quantos', 'quantas', 'total', 'contar', 'count', 'soma', 'número', 'numero']):
             tipo_pergunta = "contagem"
@@ -151,10 +205,10 @@ class MongoDBAgent:
         else:
             # Verificar padrões específicos do dicionário
             for tipo, padroes in self.padroes_perguntas.items():
-                print(f"🔍 Testando tipo: {tipo}")
+                print(f" Testando tipo: {tipo}")
                 for padrao in padroes:
                     if re.search(padrao, pergunta_lower):
-                        print(f"✅ Padrão encontrado: {padrao}")
+                        print(f" Padrão encontrado: {padrao}")
                         tipo_pergunta = tipo
                         break
                 if tipo_pergunta:
@@ -185,7 +239,7 @@ class MongoDBAgent:
             'colecoes_especificas': colecoes_especificas
         }
         
-        print(f"🎯 Interpretação final: {resultado}")
+        print(f" Interpretação final: {resultado}")
         return resultado
         
     def conectar_mongodb(self):
@@ -193,17 +247,23 @@ class MongoDBAgent:
         try:
             self.client = MongoClient(self.mongo_uri)
             self.db = self.client[self.database_name]
-            print(f"✅ Conectado ao MongoDB: {self.database_name}")
+            print(f"Conectado ao MongoDB: {self.database_name}")
             
             # Listar coleções disponíveis
             colecoes = self.db.list_collection_names()
-            print(f"📋 Coleções disponíveis: {colecoes}")
+            print(f"Coleções disponíveis: {colecoes}")
             
             # Criar índices para otimizar consultas
             self._criar_indices_otimizacao()
             
+            # Inicializar detector de fraude
+            self.detector_fraude = DetectorFraude(self.client, self.database_name)
+            print("Detector de fraude inicializado")
+            
         except Exception as e:
-            print(f"❌ Erro ao conectar MongoDB: {e}")
+            print(f"Erro ao conectar MongoDB: {e}")
+            import traceback
+            traceback.print_exc()
     
     def _criar_indices_otimizacao(self):
         """Cria índices para otimizar as consultas mais frequentes."""
@@ -223,20 +283,20 @@ class MongoDBAgent:
             for campo, direcao in indices:
                 try:
                     colecao.create_index([(campo, direcao)], background=True)
-                    print(f"📊 Índice criado: {campo}")
+                    print(f"Índice criado: {campo}")
                 except Exception as e:
-                    print(f"⚠️ Índice {campo} já existe ou erro: {e}")
+                    print(f"Índice {campo} já existe ou erro: {e}")
             
             # Índice composto para consultas de agregação
             try:
                 colecao.create_index([("SKU", 1), ("LOJA", 1)], background=True)
                 colecao.create_index([("IDUSUARIO", 1), ("DATA_DEVOLUCAO", 1)], background=True)
-                print("📊 Índices compostos criados")
+                print("Índices compostos criados")
             except Exception as e:
-                print(f"⚠️ Erro ao criar índices compostos: {e}")
+                print(f"Erro ao criar índices compostos: {e}")
                 
         except Exception as e:
-            print(f"❌ Erro ao criar índices: {e}")
+            print(f"Erro ao criar índices: {e}")
             raise
     
     def carregar_dados_mongo(self, colecoes: List[str] = None) -> List[Document]:
@@ -259,7 +319,7 @@ class MongoDBAgent:
         if not colecoes:
             colecoes = self.db.list_collection_names()
         
-        print(f"📚 Carregando dados das coleções: {colecoes}")
+        print(f" Carregando dados das coleções: {colecoes}")
         
         for colecao_nome in colecoes:
             colecao = self.db[colecao_nome]
@@ -268,7 +328,7 @@ class MongoDBAgent:
             # Mas primeiro verificar se a coleção tem dados
             total_docs = colecao.count_documents({})
             if total_docs == 0:
-                print(f"⚠️ Coleção '{colecao_nome}' está vazia, pulando...")
+                print(f" Coleção '{colecao_nome}' está vazia, pulando...")
                 continue
                 
             # Usar amostra menor para coleções grandes
@@ -290,7 +350,7 @@ class MongoDBAgent:
             ]
             docs_mongo = list(colecao.aggregate(pipeline))
             
-            print(f"📄 Coleção '{colecao_nome}': {len(docs_mongo)} documentos")
+            print(f" Coleção '{colecao_nome}': {len(docs_mongo)} documentos")
             
             for doc in docs_mongo:
                 # Converter documento MongoDB para Document LangChain
@@ -306,7 +366,7 @@ class MongoDBAgent:
                 )
                 documentos.append(documento_langchain)
         
-        print(f"✅ Total de documentos carregados: {len(documentos)}")
+        print(f" Total de documentos carregados: {len(documentos)}")
         return documentos
     
     def _formatar_documento(self, doc: Dict, colecao: str) -> str:
@@ -364,7 +424,7 @@ class MongoDBAgent:
                 raise ValueError("Nenhum documento encontrado no MongoDB")
             
             # Criar vetorstore com FAISS
-            print("🔍 Criando índice de vetores com FAISS...")
+            print(" Criando índice de vetores com FAISS...")
             self.vectorstore = FAISS.from_documents(documentos, self.embeddings)
             
             # Configurar memória para conversas
@@ -391,7 +451,7 @@ class MongoDBAgent:
             
             custom_prompt = PromptTemplate(
                 template="""
-Você é um assistente especializado em consultar dados de um banco MongoDB.
+Você é um assistente especializado em consultar dados de um banco MongoDB e detectar fraudes.
 
 INSTRUÇÕES IMPORTANTES:
 1. Responda SEMPRE em português brasileiro
@@ -407,6 +467,12 @@ INSTRUÇÕES IMPORTANTES:
 11. Quando perguntado sobre uma coleção específica, sempre consulte a coleção correta
 12. Você pode consultar qualquer coleção do banco automaticamente
 
+DETECÇÃO DE FRAUDE:
+- Para qualquer menção a "análise de fraude", "detectar fraude", "suspeitas", "auditoria de fraude", etc., execute automaticamente a análise completa de fraude
+- A análise de fraude detecta: trocas desbalanceadas, produtos em ajustes e trocas simultâneos, percentuais suspeitos, movimentações em curto intervalo, e reincidências
+- Sempre forneça relatórios detalhados com níveis de risco (ALTO/MÉDIO) e recomendações específicas
+- Use formatação HTML rica para relatórios de fraude com cores e ícones apropriados
+
 Documentos relevantes (amostra para contexto):
 {context}
 
@@ -418,11 +484,83 @@ Resposta em português:""",
             
             self.qa_chain.combine_docs_chain.llm_chain.prompt = custom_prompt
             
-            print("✅ Agente criado com sucesso!")
+            print(" Agente criado com sucesso!")
             
         except Exception as e:
-            print(f"❌ Erro ao criar agente: {e}")
+            print(f" Erro ao criar agente: {e}")
             raise
+    
+    def _detectar_colecao_e_tipo_ranking(self, pergunta: str) -> dict:
+        """
+        Detecta qual coleção e tipo de ranking o usuário está solicitando.
+        Retorna um dicionário com as informações necessárias para a consulta.
+        """
+        pergunta_lower = pergunta.lower()
+        
+        # Detectar tipo de coleção
+        colecao_nome = None
+        if any(palavra in pergunta_lower for palavra in ['cancelamento', 'cancelamentos', 'cancelar', 'cancelado']):
+            colecao_nome = 'CANCELAMENTO_2025'
+        elif any(palavra in pergunta_lower for palavra in ['ajuste', 'ajustes', 'estoque', 'inventario', 'inventário']):
+            colecao_nome = 'AJUSTES_ESTOQUE_2025'
+        elif any(palavra in pergunta_lower for palavra in ['devolução', 'devolucao', 'devoluções', 'devolucoes']):
+            colecao_nome = 'DEVOLUCAO'
+        else:
+            # Se não detectou coleção específica, retornar None para usar detecção mais inteligente
+            colecao_nome = None
+        
+        # Detectar tipo de ranking
+        if any(palavra in pergunta_lower for palavra in ['loja', 'lojas', 'filial', 'filiais']):
+            return {
+                'colecao': colecao_nome,
+                'tipo_ranking': 'lojas',
+                'campo_agrupamento': 'LOJA',
+                'titulo_ranking': 'Lojas'
+            }
+        elif any(palavra in pergunta_lower for palavra in ['data', 'datas']):
+            if colecao_nome == 'CANCELAMENTO_2025':
+                return {
+                    'colecao': colecao_nome,
+                    'tipo_ranking': 'datas',
+                    'campo_agrupamento': 'DATACANCELAMENTO',
+                    'titulo_ranking': 'Datas de Cancelamento'
+                }
+            elif colecao_nome == 'AJUSTES_ESTOQUE_2025':
+                return {
+                    'colecao': colecao_nome,
+                    'tipo_ranking': 'datas',
+                    'campo_agrupamento': 'DATA',
+                    'titulo_ranking': 'Datas de Ajuste'
+                }
+            else:  # DEVOLUCAO
+                return {
+                    'colecao': colecao_nome,
+                    'tipo_ranking': 'datas',
+                    'campo_agrupamento': 'DATA_DEVOLUCAO',
+                    'titulo_ranking': 'Datas de Devolução'
+                }
+        elif any(palavra in pergunta_lower for palavra in ['usuario', 'usuário', 'usuarios', 'usuários']):
+            return {
+                'colecao': colecao_nome,
+                'tipo_ranking': 'usuarios',
+                'campo_agrupamento': 'IDUSUARIO',
+                'titulo_ranking': 'Usuários'
+            }
+        elif any(palavra in pergunta_lower for palavra in ['sku', 'produto', 'produtos']):
+            return {
+                'colecao': colecao_nome,
+                'tipo_ranking': 'skus',
+                'campo_agrupamento': 'SKU',
+                'titulo_ranking': 'SKUs'
+            }
+        else:
+            # Se não detectou tipo específico, usar lojas como padrão
+            return {
+                'colecao': colecao_nome,
+                'tipo_ranking': 'lojas',
+                'campo_agrupamento': 'LOJA',
+                'titulo_ranking': 'Lojas'
+            }
     
     def _detectar_colecao_relevante(self, pergunta: str) -> str:
         """
@@ -435,7 +573,7 @@ Resposta em português:""",
         
         # Mapear palavras-chave para coleções
         mapeamento_colecoes = {
-            'devolução': ['devolucao', 'devolução', 'devolucoes', 'devoluções'],
+            'devolucao': ['devolucao', 'devolução', 'devolucoes', 'devoluções', 'devolu', 'devoluç'],
             'cancelamento': ['cancelamento', 'cancelamentos', 'cancelar', 'cancelado'],
             'ajuste': ['ajuste', 'ajustes', 'estoque', 'inventario', 'inventário'],
             'venda': ['venda', 'vendas', 'vender', 'vendido'],
@@ -448,23 +586,59 @@ Resposta em português:""",
             if any(palavra in pergunta_lower for palavra in palavras):
                 # Procurar coleção que contenha essa palavra-chave
                 for colecao in colecoes:
-                    if tipo in colecao.lower():
+                    if tipo in colecao.lower() or (tipo == 'devolução' and 'devolucao' in colecao.lower()):
                         return colecao
         
-        # Se não encontrou, usar a coleção com mais registros
-        colecao_maior = None
-        max_registros = 0
-        
-        for colecao in colecoes:
-            try:
-                count = self.db[colecao].count_documents({})
-                if count > max_registros:
-                    max_registros = count
-                    colecao_maior = colecao
-            except:
-                continue
-        
-        return colecao_maior or (colecoes[0] if colecoes else None)
+        # Se não encontrou coleção específica, retornar None para que o usuário seja solicitado a especificar
+        return None
+    
+    def _listar_colecoes_disponiveis(self) -> str:
+        """
+        Lista as coleções disponíveis no banco de dados com informações básicas.
+        """
+        try:
+            if self.db is None:
+                return "Erro: Conexão com banco de dados não estabelecida."
+            
+            colecoes = self.db.list_collection_names()
+            if not colecoes:
+                return "Nenhuma coleção encontrada no banco de dados."
+            
+            html = """
+                        <div style="margin: 20px 0; font-family: Arial, sans-serif;">
+                <h3 style="color: #333; margin-bottom: 15px; text-align: center;">Coleções Disponíveis no Banco de Dados</h3>
+                            <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; border-left: 4px solid #007bff;">
+                        """
+            
+            for i, colecao in enumerate(colecoes, 1):
+                try:
+                    total_registros = self.db[colecao].count_documents({})
+                    html += f"""
+                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #dee2e6;">
+                            <span style="font-weight: bold; color: #495057;">{i}. {colecao}</span>
+                            <span style="background: #28a745; color: white; padding: 4px 8px; border-radius: 4px; font-weight: bold;">{total_registros:,} registros</span>
+                                </div>
+                            """
+                except Exception as e:
+                    html += f"""
+                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #dee2e6;">
+                            <span style="font-weight: bold; color: #495057;">{i}. {colecao}</span>
+                            <span style="background: #dc3545; color: white; padding: 4px 8px; border-radius: 4px; font-weight: bold;">Erro ao contar</span>
+                        </div>
+                    """
+            
+            html += """
+                            </div>
+                <p style="color: #666; text-align: center; margin-top: 15px;">
+                    <strong>Dica:</strong> Para consultar dados específicos, mencione a coleção desejada (ex: "top 10 lojas de cancelamento", "datas mais frequentes em devolução")
+                </p>
+                        </div>
+                        """
+            
+            return html
+            
+        except Exception as e:
+            return f"Erro ao listar coleções: {e}"
 
     def _fazer_consulta_direta(self, pergunta: str) -> str:
         """
@@ -474,294 +648,485 @@ Resposta em português:""",
         pergunta_lower = pergunta.lower()
         
         try:
-            # Detectar coleção relevante
-            colecao_nome = self._detectar_colecao_relevante(pergunta)
-            if not colecao_nome:
-                return "Nenhuma coleção encontrada no banco de dados."
+            # Detectar tipo de coleção e tipo de ranking de forma inteligente
+            colecao_info = self._detectar_colecao_e_tipo_ranking(pergunta)
+            if not colecao_info:
+                return "Não foi possível entender sua solicitação. Por favor, especifique a coleção (devolução, cancelamento, ajuste) e o tipo de ranking (lojas, datas, usuários, etc.)."
             
+            colecao_nome = colecao_info['colecao']
+            tipo_ranking = colecao_info['tipo_ranking']
+            campo_agrupamento = colecao_info['campo_agrupamento']
+            titulo_ranking = colecao_info['titulo_ranking']
+            
+            # Se não detectou coleção específica, usar detecção mais inteligente
+            if colecao_nome is None:
+                colecao_nome = self._detectar_colecao_relevante(pergunta)
+                if not colecao_nome:
+                    return "Não foi possível identificar qual coleção consultar. Por favor, especifique se quer dados de devolução, cancelamento ou ajustes de estoque."
+                
+                # Atualizar os campos de ranking com a coleção detectada
+                if colecao_nome == 'CANCELAMENTO_2025':
+                    campo_agrupamento = 'LOJA' if tipo_ranking == 'lojas' else 'DATACANCELAMENTO'
+                    titulo_ranking = 'Lojas' if tipo_ranking == 'lojas' else 'Datas de Cancelamento'
+                elif colecao_nome == 'AJUSTES_ESTOQUE_2025':
+                    campo_agrupamento = 'LOJA' if tipo_ranking == 'lojas' else 'DATA'
+                    titulo_ranking = 'Lojas' if tipo_ranking == 'lojas' else 'Datas de Ajuste'
+                else:  # DEVOLUCAO
+                    campo_agrupamento = 'LOJA' if tipo_ranking == 'lojas' else 'DATA_DEVOLUCAO'
+                    titulo_ranking = 'Lojas' if tipo_ranking == 'lojas' else 'Datas de Devolução'
+            
+            # Detectar quantidade solicitada
+            limite = self._detectar_quantidade(pergunta)
+            
+            # Usar coleção detectada
+            if self.db is None:
+                return " Erro: Conexão com banco de dados não estabelecida."
             colecao = self.db[colecao_nome]
+            if colecao is None:
+                return f"Coleção {colecao_nome} não encontrada no banco de dados."
+            
+            # Executar consulta de ranking
+            pipeline = [
+                {"$group": {
+                    "_id": f"${campo_agrupamento}",
+                    "count": {"$sum": 1}
+                }},
+                {"$sort": {"count": -1}},
+                {"$limit": limite}
+            ]
+            resultado = list(colecao.aggregate(pipeline))
+            
+            if resultado:
+                # Verificar se deve retornar em formato de tabela
+                if any(palavra in pergunta_lower for palavra in ['tabela', 'table', 'formato de tabela']):
+                    return self._formatar_como_tabela(
+                        dados=resultado,
+                        colunas=['Posição', titulo_ranking, 'Quantidade de Registros'],
+                        titulo=f"Top {limite} {titulo_ranking} Mais Frequentes",
+                        formata_dados=lambda i, item: [
+                            i + 1,
+                            item['_id'] if item['_id'] else 'N/A',
+                            f"{item['count']:,}"
+                        ]
+                    )
+                else:
+                    html = f"""
+                    <div style="margin: 20px 0; font-family: Arial, sans-serif;">
+                    <h3 style="color: #333; margin-bottom: 15px; text-align: center;"> Top {limite} {titulo_ranking} Mais Frequentes</h3>
+                        <p style="color: #666; text-align: center; margin-bottom: 20px;">Coleção: <strong>{colecao_nome}</strong></p>
+                    <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; border-left: 4px solid #007bff;">
+                    """
+                    for i, item in enumerate(resultado, 1):
+                        item_nome = item['_id'] if item['_id'] else 'N/A'
+                        count = item['count']
+                        html += f"""
+                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #dee2e6;">
+                            <span style="font-weight: bold; color: #495057;">{i}. {item_nome}</span>
+                            <span style="background: #007bff; color: white; padding: 4px 8px; border-radius: 4px; font-weight: bold;">{count:,} registros</span>
+                            </div>
+                        """
+                    html += """
+                        </div>
+                    </div>
+                    """
+                    return html
+            else:
+                return f"Não foi possível analisar os {titulo_ranking.lower()} na coleção {colecao_nome}."
             
             # Contar total de registros
             if any(palavra in pergunta_lower for palavra in ['quantas linhas', 'quantos registros', 'total de registros', 'quantos documentos']):
                 total = colecao.count_documents({})
                 return f"O total de registros na coleção **{colecao_nome}** é: **{total:,}** registros."
             
-            # Contar valores únicos de IDUSUARIO
-            if any(palavra in pergunta_lower for palavra in ['idusuario', 'usuarios diferentes', 'usuários únicos']):
-                usuarios_unicos = colecao.distinct('IDUSUARIO')
-                return f"Existem **{len(usuarios_unicos):,}** IDUSUARIOS únicos na coleção **{colecao_nome}**."
-            
-            # Contar valores únicos de SKU
-            if any(palavra in pergunta_lower for palavra in ['sku', 'skus diferentes', 'produtos únicos']):
-                skus_unicos = colecao.distinct('SKU')
-                return f"Existem **{len(skus_unicos):,}** SKUs únicos na coleção **{colecao_nome}**."
-            
-            # Somar coluna DIFERENCA_VALOR
-            if any(palavra in pergunta_lower for palavra in ['soma', 'somatória', 'total', 'diferenca_valor']):
-                pipeline = [
-                    {"$group": {
-                        "_id": None,
-                        "total": {"$sum": {"$toDouble": {"$replaceAll": {"input": "$DIFERENCA_VALOR", "find": ",", "replacement": "."}}}}
-                    }}
-                ]
-                resultado = list(colecao.aggregate(pipeline))
-                if resultado:
-                    total = resultado[0]['total']
-                    return f"A somatória da coluna DIFERENCA_VALOR na coleção **{colecao_nome}** é: **{total:,.2f}**"
-                else:
-                    return f"Não foi possível calcular a somatória da coluna DIFERENCA_VALOR na coleção **{colecao_nome}**."
-            
-            # Análise de datas mais frequentes
-            if any(palavra in pergunta_lower for palavra in ['data', 'datas', 'mais se repete', 'frequente', 'comum']):
-                # Detectar quantidade solicitada
-                limite = self._detectar_quantidade(pergunta)
-                
-                pipeline = [
-                    {"$group": {
-                        "_id": "$DATA_DEVOLUCAO",
-                        "count": {"$sum": 1}
-                    }},
-                    {"$sort": {"count": -1}},
-                    {"$limit": limite}
-                ]
-                resultado = list(colecao.aggregate(pipeline))
-                if resultado:
-                    # Verificar se deve retornar em formato de tabela
-                    if any(palavra in pergunta_lower for palavra in ['tabela', 'table', 'formato de tabela']):
-                        return self._formatar_como_tabela(
-                            dados=resultado,
-                            colunas=['Posição', 'Data de Devolução', 'Quantidade de Registros'],
-                            titulo=f"Top {limite} Datas de Devolução Mais Frequentes",
-                            formata_dados=lambda i, item: [
-                                i + 1,
-                                item['_id'] if item['_id'] else 'N/A',
-                                f"{item['count']:,}"
-                            ]
-                        )
-                    else:
-                        html = f"""
-                        <div style="margin: 20px 0; font-family: Arial, sans-serif;">
-                            <h3 style="color: #333; margin-bottom: 15px; text-align: center;">📅 Top {limite} Datas Mais Frequentes</h3>
-                            <p style="color: #666; text-align: center; margin-bottom: 20px;">Coleção: <strong>{colecao_nome}</strong></p>
-                            <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; border-left: 4px solid #007bff;">
-                        """
-                        for i, item in enumerate(resultado, 1):
-                            data = item['_id'] if item['_id'] else 'N/A'
-                            count = item['count']
-                            html += f"""
-                                <div style="padding: 8px 0; border-bottom: 1px solid #dee2e6; display: flex; justify-content: space-between;">
-                                    <span style="font-weight: bold; color: #495057;">{i}. {data}</span>
-                                    <span style="color: #007bff; font-weight: bold;">{count:,} registros</span>
-                                </div>
-                            """
-                        html += """
-                            </div>
-                        </div>
-                        """
-                        return html
-                else:
-                    return "Não foi possível analisar as datas de devolução."
-            
-            # Análise de usuários mais frequentes
-            if (any(palavra in pergunta_lower for palavra in ['usuario mais', 'usuário mais', 'mais devoluções', 'top usuários', 'usuario com mais', 'usuário com mais', 'top usuario', 'top usuário']) 
-                and not any(palavra in pergunta_lower for palavra in ['loja', 'lojas', 'filial', 'filiais'])):
-                # Detectar quantidade solicitada
-                limite = self._detectar_quantidade(pergunta)
-                
-                pipeline = [
-                    {"$group": {
-                        "_id": "$IDUSUARIO",
-                        "count": {"$sum": 1}
-                    }},
-                    {"$sort": {"count": -1}},
-                    {"$limit": limite}
-                ]
-                resultado = list(colecao.aggregate(pipeline))
-                if resultado:
-                    if any(palavra in pergunta_lower for palavra in ['tabela', 'table', 'formato de tabela']):
-                        return self._formatar_como_tabela(
-                            dados=resultado,
-                            colunas=['Posição', 'ID Usuário', 'Quantidade de Registros'],
-                            titulo=f"Top {limite} Usuários Mais Frequentes - Coleção {colecao_nome}",
-                            formata_dados=lambda i, item: [
-                                i + 1,
-                                item['_id'] if item['_id'] else 'N/A',
-                                f"{item['count']:,}"
-                            ]
-                        )
-                    else:
-                        resposta = f"Os {limite} usuários mais frequentes na coleção **{colecao_nome}** são:\n\n"
-                        for i, item in enumerate(resultado, 1):
-                            usuario = item['_id'] if item['_id'] else 'N/A'
-                            count = item['count']
-                            resposta += f"{i}. **Usuário {usuario}**: {count:,} registros\n"
-                        return resposta
-                else:
-                    return "Não foi possível analisar os usuários."
-            
-            # Análise de SKUs mais frequentes
-            if (any(palavra in pergunta_lower for palavra in ['sku mais', 'produto mais', 'mais devolvido', 'top skus', 'sku com mais', 'produto com mais', 'top sku', 'top produto']) 
-                and not any(palavra in pergunta_lower for palavra in ['loja', 'lojas', 'filial', 'filiais', 'usuario', 'usuário'])):
-                # Detectar quantidade solicitada
-                limite = self._detectar_quantidade(pergunta)
-                
-                pipeline = [
-                    {"$group": {
-                        "_id": "$SKU",
-                        "count": {"$sum": 1}
-                    }},
-                    {"$sort": {"count": -1}},
-                    {"$limit": limite}
-                ]
-                resultado = list(colecao.aggregate(pipeline))
-                if resultado:
-                    if any(palavra in pergunta_lower for palavra in ['tabela', 'table', 'formato de tabela']):
-                        return self._formatar_como_tabela(
-                            dados=resultado,
-                            colunas=['Posição', 'SKU', 'Quantidade de Registros'],
-                            titulo=f"Top {limite} SKUs Mais Frequentes - Coleção {colecao_nome}",
-                            formata_dados=lambda i, item: [
-                                i + 1,
-                                item['_id'] if item['_id'] else 'N/A',
-                                f"{item['count']:,}"
-                            ]
-                        )
-                    else:
-                        resposta = f"Os {limite} SKUs mais frequentes na coleção **{colecao_nome}** são:\n\n"
-                        for i, item in enumerate(resultado, 1):
-                            sku = item['_id'] if item['_id'] else 'N/A'
-                            count = item['count']
-                            resposta += f"{i}. **SKU {sku}**: {count:,} registros\n"
-                        return resposta
-                else:
-                    return "Não foi possível analisar os SKUs."
-            
-            # Análise de lojas mais frequentes
-            if any(palavra in pergunta_lower for palavra in ['loja', 'lojas', 'filial', 'filiais', 'loja com mais', 'lojas com mais', 'top loja', 'top lojas']):
-                # Detectar quantidade solicitada
-                limite = self._detectar_quantidade(pergunta)
-                
-                pipeline = [
-                    {"$group": {
-                        "_id": "$LOJA",
-                        "count": {"$sum": 1}
-                    }},
-                    {"$sort": {"count": -1}},
-                    {"$limit": limite}
-                ]
-                resultado = list(colecao.aggregate(pipeline))
-                if resultado:
-                    if any(palavra in pergunta_lower for palavra in ['tabela', 'table', 'formato de tabela']):
-                        return self._formatar_como_tabela(
-                            dados=resultado,
-                            colunas=['Posição', 'Loja', 'Quantidade de Registros'],
-                            titulo=f"Top {limite} Lojas Mais Frequentes - Coleção {colecao_nome}",
-                            formata_dados=lambda i, item: [
-                                i + 1,
-                                item['_id'] if item['_id'] else 'N/A',
-                                f"{item['count']:,}"
-                            ]
-                        )
-                    else:
-                        html = f"""
-                        <div style="margin: 20px 0; font-family: Arial, sans-serif;">
-                            <h3 style="color: #333; margin-bottom: 15px; text-align: center;">🏪 Top {limite} Lojas Mais Frequentes</h3>
-                            <p style="color: #666; text-align: center; margin-bottom: 20px;">Coleção: <strong>{colecao_nome}</strong></p>
-                            <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; border-left: 4px solid #28a745;">
-                        """
-                        for i, item in enumerate(resultado, 1):
-                            loja = item['_id'] if item['_id'] else 'N/A'
-                            count = item['count']
-                            html += f"""
-                                <div style="padding: 8px 0; border-bottom: 1px solid #dee2e6; display: flex; justify-content: space-between;">
-                                    <span style="font-weight: bold; color: #495057;">{i}. Loja {loja}</span>
-                                    <span style="color: #28a745; font-weight: bold;">{count:,} registros</span>
-                                </div>
-                            """
-                        html += """
-                            </div>
-                        </div>
-                        """
-                        return html
-                else:
-                    return "Não foi possível analisar as lojas."
-            
-            # Análise de tipos de movimento
-            if any(palavra in pergunta_lower for palavra in ['tipo', 'tipos', 'movimentação', 'movimento']):
-                pipeline = [
-                    {"$group": {
-                        "_id": "$TIPOMOVIMENTACAO",
-                        "count": {"$sum": 1}
-                    }},
-                    {"$sort": {"count": -1}}
-                ]
-                resultado = list(colecao.aggregate(pipeline))
-                if resultado:
-                    if any(palavra in pergunta_lower for palavra in ['tabela', 'table', 'formato de tabela']):
-                        return self._formatar_como_tabela(
-                            dados=resultado,
-                            colunas=['Tipo de Movimentação', 'Quantidade de Registros'],
-                            titulo="Distribuição de Tipos de Movimentação",
-                            formata_dados=lambda i, item: [
-                                item['_id'] if item['_id'] else 'N/A',
-                                f"{item['count']:,}"
-                            ]
-                        )
-                    else:
-                        html = f"""
-                        <div style="margin: 20px 0; font-family: Arial, sans-serif;">
-                            <h3 style="color: #333; margin-bottom: 15px; text-align: center;">📊 Distribuição de Tipos de Movimentação</h3>
-                            <p style="color: #666; text-align: center; margin-bottom: 20px;">Coleção: <strong>{colecao_nome}</strong></p>
-                            <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; border-left: 4px solid #ffc107;">
-                        """
-                        for item in resultado:
-                            tipo = item['_id'] if item['_id'] else 'N/A'
-                            count = item['count']
-                            html += f"""
-                                <div style="padding: 8px 0; border-bottom: 1px solid #dee2e6; display: flex; justify-content: space-between;">
-                                    <span style="font-weight: bold; color: #495057;">• {tipo}</span>
-                                    <span style="color: #ffc107; font-weight: bold;">{count:,} registros</span>
-                                </div>
-                            """
-                        html += """
-                            </div>
-                        </div>
-                        """
-                        return html
-                else:
-                    return "Não foi possível analisar os tipos de movimentação."
-            
-            # Consulta de dados de exemplo em formato de tabela
-            if any(palavra in pergunta_lower for palavra in ['exemplo', 'amostra', 'dados', 'registros']) and any(palavra in pergunta_lower for palavra in ['tabela', 'table', 'formato de tabela']):
-                # Buscar alguns registros de exemplo
-                registros = list(colecao.find().limit(10))
-                if registros:
-                    return self._formatar_como_tabela(
-                        dados=registros,
-                        colunas=['DATA_DEVOLUCAO', 'DIFERENCA_VALOR', 'IDORCAMENTO_NOVO', 'IDUSUARIO', 'ID_DEVOLUCAO', 'LOJA', 'SKU', 'TIPOMOVIMENTACAO', 'VALORDEVPRODUTO', 'VALORVENDAPRODUTO', '_id'],
-                        titulo=f"Amostra de Dados da Coleção {colecao_nome}",
-                        formata_dados=lambda i, item: [
-                            item.get('DATA_DEVOLUCAO', 'N/A'),
-                            str(item.get('DIFERENCA_VALOR', 'N/A')),
-                            str(item.get('IDORCAMENTO_NOVO', 'N/A')),
-                            str(item.get('IDUSUARIO', 'N/A')),
-                            str(item.get('ID_DEVOLUCAO', 'N/A')),
-                            str(item.get('LOJA', 'N/A')),
-                            str(item.get('SKU', 'N/A')),
-                            item.get('TIPOMOVIMENTACAO', 'N/A'),
-                            str(item.get('VALORDEVPRODUTO', 'N/A')),
-                            str(item.get('VALORVENDAPRODUTO', 'N/A')),
-                            str(item.get('_id', 'N/A'))
-                        ]
-                    )
-                else:
-                    return "Não foi possível buscar dados de exemplo."
-            
             return None  # Não é uma consulta que pode ser respondida diretamente
             
         except Exception as e:
-            print(f"❌ Erro na consulta direta: {e}")
+            print(f" Erro na consulta direta: {e}")
             return None
+    
+    def _executar_analise_fraude(self) -> str:
+        """
+        Executa análise completa de fraude e retorna relatório formatado.
+        
+        Returns:
+            Relatório de análise de fraude em HTML formatado
+        """
+        try:
+            if not self.detector_fraude:
+                return """
+                <div style="margin: 20px 0; padding: 20px; background-color: #f8d7da; border: 1px solid #f5c6cb; border-radius: 8px; text-align: center;">
+                    <h3 style="color: #721c24; margin: 0;"> Erro</h3>
+                    <p style="color: #721c24; margin: 10px 0 0 0;">Detector de fraude não foi inicializado corretamente.</p>
+                </div>
+                """
+            
+            print(" Executando análise completa de fraude...")
+            relatorio = self.detector_fraude.executar_analise_completa_fraude()
+            
+            return self._formatar_relatorio_fraude(relatorio)
+            
+        except Exception as e:
+            print(f" Erro na análise de fraude: {e}")
+            return f"""
+            <div style="margin: 20px 0; padding: 20px; background-color: #f8d7da; border: 1px solid #f5c6cb; border-radius: 8px; text-align: center;">
+                <h3 style="color: #721c24; margin: 0;"> Erro na Análise de Fraude</h3>
+                <p style="color: #721c24; margin: 10px 0 0 0;">Erro: {str(e)}</p>
+            </div>
+            """
+    
+    
+    
+    def _formatar_relatorio_fraude(self, relatorio: Dict[str, Any]) -> str:
+        """
+        Formata o relatório de fraude em HTML.
+        
+        Args:
+            relatorio: Dicionário com dados do relatório de fraude
+            
+        Returns:
+            HTML formatado do relatório
+        """
+        total_suspeitas = relatorio.get('total_suspeitas', 0)
+        suspeitas_por_tipo = relatorio.get('suspeitas_por_tipo', {})
+        suspeitas_por_risco = relatorio.get('suspeitas_por_nivel_risco', {})
+        resumo_executivo = relatorio.get('resumo_executivo', {})
+        recomendacoes = resumo_executivo.get('recomendacoes', [])
+        detalhes_suspeitas = relatorio.get('detalhes_suspeitas', [])
+        
+        # Cabeçalho do relatório
+        html = f"""
+        <div class="fraud-report" style="margin: 20px 0; font-family: Arial, sans-serif;">
+            <div class="fraud-header" style="background-color: #dc3545; padding: 20px; border-radius: 8px; text-align: center;">
+                <h1 style="margin: 0; font-size: 28px; font-weight: bold; color: white;"> RELATÓRIO DE ANÁLISE DE FRAUDE</h1>
+                <p style="margin: 10px 0 0 0; font-size: 16px; color: white !important;">Análise executada em {relatorio.get('timestamp_analise', 'N/A')}</p>
+                <p style="margin: 5px 0 0 0; font-size: 14px; color: white !important;">Tempo de análise: {relatorio.get('tempo_analise_segundos', 0)} segundos</p>
+                
+                <!-- Botão de Download Excel -->
+                <div style="margin-top: 20px;">
+                    <a href="/download-excel-fraude" 
+                       target="_blank"
+                       style="background: linear-gradient(135deg, #28a745, #20c997); 
+                              color: white; 
+                              text-decoration: none;
+                              border: none; 
+                              padding: 12px 24px; 
+                              border-radius: 8px; 
+                              font-size: 16px; 
+                              font-weight: bold; 
+                              cursor: pointer; 
+                              box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+                              transition: all 0.3s ease;
+                              display: inline-block;"
+                       onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 12px rgba(0,0,0,0.15)'"
+                       onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 6px rgba(0,0,0,0.1)'">
+                         Baixar Relatório Excel
+                    </a>
+                </div>
+            </div>
+        """
+        
+        # Resumo executivo
+        html += f"""
+            <div class="fraud-summary">
+                <h2 style="color: #007bff; margin: 0 0 15px 0; font-size: 22px;"> RESUMO EXECUTIVO</h2>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px;">
+                    <div class="stat-card">
+                        <div style="font-size: 24px; font-weight: bold; color: #dc3545;">{total_suspeitas}</div>
+                        <div style="color: #6c757d; font-size: 14px;">Total de Suspeitas</div>
+                    </div>
+                    <div class="stat-card">
+                        <div style="font-size: 24px; font-weight: bold; color: #dc3545;">{suspeitas_por_risco.get('ALTO', 0)}</div>
+                        <div style="color: #6c757d; font-size: 14px;">Alto Risco</div>
+                    </div>
+                    <div class="stat-card">
+                        <div style="font-size: 24px; font-weight: bold; color: #ffc107;">{suspeitas_por_risco.get('MÉDIO', 0)}</div>
+                        <div style="color: #6c757d; font-size: 14px;">Médio Risco</div>
+                    </div>
+                    <div class="stat-card">
+                        <div style="font-size: 24px; font-weight: bold; color: #28a745;">{resumo_executivo.get('percentual_alto_risco', 0)}%</div>
+                        <div style="color: #6c757d; font-size: 14px;">% Alto Risco</div>
+                    </div>
+                </div>
+            </div>
+        """
+        
+        # Tipos de fraude encontrados
+        if suspeitas_por_tipo:
+            html += f"""
+                <div class="fraud-types">
+                    <h2 style="color: #856404; margin: 0 0 15px 0; font-size: 20px;"> TIPOS DE FRAUDE DETECTADOS</h2>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 10px;">
+            """
+            
+            for tipo, quantidade in suspeitas_por_tipo.items():
+                html += f"""
+                    <div style="background: white; padding: 12px; border-radius: 6px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                        <span style="color: #495057; font-weight: 500;">{tipo}</span>
+                        <span style="background: #dc3545; color: white; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 14px;">{quantidade}</span>
+                    </div>
+                """
+            
+            html += """
+                    </div>
+                </div>
+            """
+        
+        
+        # Detalhes das suspeitas
+        if detalhes_suspeitas:
+            html += f"""
+                <div class="fraud-details">
+                    <h2 style="color: #495057; margin: 0 0 20px 0; font-size: 20px;"> DETALHES DAS SUSPEITAS</h2>
+                    <div style="overflow-x: auto;">
+                        <table style="width: 100%; border-collapse: collapse; background-color: white; box-shadow: 0 2px 4px rgba(0,0,0,0.1); border-radius: 8px; overflow: hidden;">
+                            <thead>
+                                <tr style="background-color: #e9ecef;">
+                                    <th style="padding: 12px 15px; text-align: left; font-weight: bold; color: #495057; border-bottom: 2px solid #dee2e6;">Tipo de Fraude</th>
+                                    <th style="padding: 12px 15px; text-align: left; font-weight: bold; color: #495057; border-bottom: 2px solid #dee2e6;">Nível de Risco</th>
+                                    <th style="padding: 12px 15px; text-align: left; font-weight: bold; color: #495057; border-bottom: 2px solid #dee2e6;">Detalhes</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+            """
+            
+            for i, suspeita in enumerate(detalhes_suspeitas[:20]):  # Limitar a 20 para não sobrecarregar
+                cor_linha = "#f8f9fa" if i % 2 == 0 else "white"
+                nivel_risco = suspeita.get('nivel_risco', 'DESCONHECIDO')
+                cor_risco = "#dc3545" if nivel_risco == "ALTO" else "#ffc107" if nivel_risco == "MÉDIO" else "#6c757d"
+                
+                # Criar resumo dos detalhes
+                detalhes_resumo = []
+                if 'sku' in suspeita:
+                    detalhes_resumo.append(f"SKU: {suspeita['sku']}")
+                if 'loja' in suspeita:
+                    detalhes_resumo.append(f"Loja: {suspeita['loja']}")
+                if 'cliente' in suspeita:
+                    detalhes_resumo.append(f"Cliente: {suspeita['cliente']}")
+                if 'produto' in suspeita:
+                    detalhes_resumo.append(f"Produto: {suspeita['produto']}")
+                
+                detalhes_texto = " | ".join(detalhes_resumo) if detalhes_resumo else "N/A"
+                
+                # Determinar classe CSS baseada no nível de risco
+                classe_risco = "risk-high" if nivel_risco == "ALTO" else "risk-medium" if nivel_risco == "MÉDIO" else ""
+                
+                html += f"""
+                    <tr style="background-color: {cor_linha};">
+                        <td style="padding: 10px 15px; border-bottom: 1px solid #dee2e6; color: #495057; font-weight: 500;">{suspeita.get('tipo_fraude', 'N/A')}</td>
+                        <td style="padding: 10px 15px; border-bottom: 1px solid #dee2e6;">
+                            <span class="{classe_risco}" style="padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 12px;">{nivel_risco}</span>
+                        </td>
+                        <td style="padding: 10px 15px; border-bottom: 1px solid #dee2e6; color: #495057; font-size: 14px;">{detalhes_texto}</td>
+                    </tr>
+                """
+            
+            if len(detalhes_suspeitas) > 20:
+                html += f"""
+                    <tr style="background-color: #e9ecef;">
+                        <td colspan="3" style="padding: 15px; text-align: center; color: #6c757d; font-style: italic;">
+                            ... e mais {len(detalhes_suspeitas) - 20} suspeitas (mostrando apenas as primeiras 20)
+                        </td>
+                    </tr>
+                """
+            
+            html += """
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            """
+        
+        html += """
+            </div>
+        """
+        
+        return html
+
+    def _consultar_por_data_especifica(self, pergunta: str) -> str:
+        """
+        Consulta registros por data específica.
+        
+        Args:
+            pergunta: Pergunta do usuário contendo a data
+            
+        Returns:
+            Resposta formatada com a contagem de registros
+        """
+        try:
+            # Detectar tipo de consulta e coleção
+            tipo_consulta = self._detectar_tipo_consulta_data(pergunta)
+            colecoes_possiveis = tipo_consulta['colecoes']
+            campo_data = tipo_consulta['campo_data']
+            
+            # Encontrar coleção disponível
+            colecoes_disponiveis = [col for col in colecoes_possiveis if col in self.db.list_collection_names()]
+            
+            if not colecoes_disponiveis:
+                return f"Nenhuma coleção encontrada para consulta de {tipo_consulta['tipo']}."
+            
+            colecao_nome = colecoes_disponiveis[0]
+            colecao = self.db[colecao_nome]
+            
+            # Normalizar data
+            data_consulta = self._normalizar_data(pergunta)
+            if not data_consulta:
+                return "Data não encontrada na pergunta. Por favor, forneça uma data no formato DD/MM/AAAA."
+            
+            # Contar registros
+            total_registros = colecao.count_documents({campo_data: data_consulta})
+            
+            return f"No dia {data_consulta}, foram encontrados **{total_registros}** registros de {tipo_consulta['tipo']} na coleção **{colecao_nome}**."
+            
+        except Exception as e:
+            print(f" Erro ao consultar por data específica: {e}")
+            return f"Erro ao consultar por data: {str(e)}"
+
+    def _consultar_por_periodo_datas(self, pergunta: str) -> str:
+        """
+        Consulta registros por período de datas.
+        
+        Args:
+            pergunta: Pergunta do usuário contendo o período
+            
+        Returns:
+            Resposta formatada com a contagem de registros
+        """
+        try:
+            pergunta_lower = pergunta.lower()
+            
+            # Detectar tipo de consulta e coleção
+            tipo_consulta = self._detectar_tipo_consulta_data(pergunta)
+            colecoes_possiveis = tipo_consulta['colecoes']
+            campo_data = tipo_consulta['campo_data']
+            
+            # Encontrar coleção disponível
+            colecoes_disponiveis = [col for col in colecoes_possiveis if col in self.db.list_collection_names()]
+            
+            if not colecoes_disponiveis:
+                return f"Nenhuma coleção encontrada para consulta de {tipo_consulta['tipo']}."
+            
+            colecao_nome = colecoes_disponiveis[0]
+            colecao = self.db[colecao_nome]
+            
+            # Extrair datas do período
+            import re
+            
+            # Padrões para diferentes formatos de período
+            padroes_periodo = [
+                r'entre\s+o?\s*dia\s+(\d{1,2}/\d{1,2})\s+até\s+dia\s+(\d{1,2}/\d{1,2})',
+                r'de\s+(\d{1,2}/\d{1,2})\s+até\s+(\d{1,2}/\d{1,2})',
+                r'entre\s+(\d{1,2}/\d{1,2})\s+e\s+(\d{1,2}/\d{1,2})',
+                r'entre\s+os\s+dias\s+(\d{1,2}/\d{1,2})\s+e\s+(\d{1,2}/\d{1,2})',
+                r'entre\s+o\s+dia\s+(\d{1,2}/\d{1,2})\s+e\s+(\d{1,2}/\d{1,2})'
+            ]
+            
+            data_inicio = None
+            data_fim = None
+            
+            for padrao in padroes_periodo:
+                match = re.search(padrao, pergunta_lower)
+                if match:
+                    data_inicio = self._normalizar_data(match.group(1))
+                    data_fim = self._normalizar_data(match.group(2))
+                    break
+            
+            if not data_inicio or not data_fim:
+                return "Período não encontrado na pergunta. Por favor, forneça um período no formato 'entre DD/MM/AAAA e DD/MM/AAAA'."
+            
+            # Contar registros no período
+            total_registros = colecao.count_documents({
+                campo_data: {
+                    "$gte": data_inicio,
+                    "$lte": data_fim
+                }
+            })
+            
+            return f"No período de {data_inicio} a {data_fim}, foram encontrados **{total_registros}** registros de {tipo_consulta['tipo']} na coleção **{colecao_nome}**."
+            
+        except Exception as e:
+            print(f" Erro ao consultar por período: {e}")
+            return f"Erro ao consultar por período: {str(e)}"
+
+    def _detectar_tipo_consulta_data(self, pergunta: str) -> Dict[str, Any]:
+        """
+        Detecta o tipo de consulta de data baseado na pergunta.
+        
+        Args:
+            pergunta: Pergunta do usuário
+            
+        Returns:
+            Dicionário com informações sobre o tipo de consulta
+        """
+        pergunta_lower = pergunta.lower()
+        
+        # Mapear tipos de consulta para coleções e campos
+        tipos_consulta = {
+            'devolução': {
+                'colecoes': ['DEVOLUCAO', 'DEVOLUCOES', 'DEVOLUCAO_2025'],
+                'campo_data': 'DATA_DEVOLUCAO',
+                'tipo': 'devoluções'
+            },
+            'cancelamento': {
+                'colecoes': ['CANCELAMENTO', 'CANCELAMENTOS', 'CANCELAMENTO_2025'],
+                'campo_data': 'DATACANCELAMENTO',
+                'tipo': 'cancelamentos'
+            },
+            'ajuste': {
+                'colecoes': ['AJUSTES ESTOQUE', 'AJUSTES', 'ESTOQUE', 'INVENTARIO', 'AJUSTES_ESTOQUE_2025'],
+                'campo_data': 'DATA',
+                'tipo': 'ajustes de estoque'
+            }
+        }
+        
+        # Detectar tipo baseado em palavras-chave
+        for tipo, info in tipos_consulta.items():
+            # Criar variações com e sem acentos
+            variacoes = [tipo, f'{tipo}s']
+            if tipo == 'devolução':
+                variacoes.extend(['devolucao', 'devoluções', 'devolucoes'])
+            elif tipo == 'cancelamento':
+                variacoes.extend(['cancelamentos'])
+            elif tipo == 'ajuste':
+                variacoes.extend(['ajustes', 'estoque', 'inventario', 'inventário'])
+            
+            if any(palavra in pergunta_lower for palavra in variacoes):
+                return info
+        
+        # Se não detectar tipo específico, assumir devolução
+        return tipos_consulta['devolução']
+
+    def _normalizar_data(self, texto: str) -> Optional[str]:
+        """
+        Normaliza data extraída do texto para formato padrão.
+        
+        Args:
+            texto: Texto contendo a data
+            
+        Returns:
+            Data normalizada no formato DD/MM/AAAA ou None se não encontrar
+        """
+        import re
+        from datetime import datetime
+        
+        # Extrair data do texto
+        padrao_data = r'(\d{1,2})/(\d{1,2})(?:/(\d{2,4}))?'
+        match = re.search(padrao_data, texto)
+        
+        if not match:
+            return None
+        
+        dia = match.group(1).zfill(2)
+        mes = match.group(2).zfill(2)
+        ano = match.group(3)
+        
+        # Se ano não foi fornecido, usar ano atual
+        if not ano:
+            ano = str(datetime.now().year)
+        elif len(ano) == 2:
+            # Se ano tem 2 dígitos, assumir 20XX
+            ano = f"20{ano}"
+        
+        return f"{dia}/{mes}/{ano}"
 
     def _analisar_inconsistencias(self) -> str:
         """
@@ -798,7 +1163,7 @@ Resposta em português:""",
                 
                 html = f"""
                 <div style="margin: 20px 0; font-family: Arial, sans-serif;">
-                    <h3 style="color: #dc3545; margin-bottom: 15px; text-align: center;">⚠️ Inconsistências Encontradas</h3>
+                    <h3 style="color: #dc3545; margin-bottom: 15px; text-align: center;"> Inconsistências Encontradas</h3>
                     <div style="overflow-x: auto;">
                         <table style="width: 100%; border-collapse: collapse; background-color: white; box-shadow: 0 2px 4px rgba(0,0,0,0.1); border-radius: 8px; overflow: hidden;">
                             <thead>
@@ -836,7 +1201,7 @@ Resposta em português:""",
             else:
                 return """
                 <div style="margin: 20px 0; padding: 20px; background-color: #d4edda; border: 1px solid #c3e6cb; border-radius: 8px; text-align: center;">
-                    <h3 style="color: #155724; margin: 0;">✅ Nenhuma Inconsistência Encontrada</h3>
+                    <h3 style="color: #155724; margin: 0;"> Nenhuma Inconsistência Encontrada</h3>
                     <p style="color: #155724; margin: 10px 0 0 0;">Os dados estão consistentes entre todas as coleções.</p>
                 </div>
                 """
@@ -844,7 +1209,7 @@ Resposta em português:""",
         except Exception as e:
             return f"""
             <div style="margin: 20px 0; padding: 20px; background-color: #f8d7da; border: 1px solid #f5c6cb; border-radius: 8px; text-align: center;">
-                <h3 style="color: #721c24; margin: 0;">❌ Erro na Análise</h3>
+                <h3 style="color: #721c24; margin: 0;"> Erro na Análise</h3>
                 <p style="color: #721c24; margin: 10px 0 0 0;">Erro ao analisar inconsistências: {str(e)}</p>
             </div>
             """
@@ -855,25 +1220,28 @@ Resposta em português:""",
         """
         pergunta_lower = pergunta.lower()
         
-        # Números diretos
-        if 'top 1' in pergunta_lower or 'top1' in pergunta_lower or 'primeiro' in pergunta_lower:
-            return 1
-        elif 'top 3' in pergunta_lower or 'top3' in pergunta_lower or 'três' in pergunta_lower or 'tres' in pergunta_lower:
-            return 3
-        elif 'top 5' in pergunta_lower or 'top5' in pergunta_lower or 'cinco' in pergunta_lower:
-            return 5
-        elif 'top 10' in pergunta_lower or 'top10' in pergunta_lower or 'dez' in pergunta_lower:
-            return 10
-        elif 'top 15' in pergunta_lower or 'top15' in pergunta_lower or 'quinze' in pergunta_lower:
-            return 15
-        elif 'top 20' in pergunta_lower or 'top20' in pergunta_lower or 'vinte' in pergunta_lower:
-            return 20
-        elif 'top 25' in pergunta_lower or 'top25' in pergunta_lower or 'vinte e cinco' in pergunta_lower:
-            return 25
-        elif 'top 50' in pergunta_lower or 'top50' in pergunta_lower or 'cinquenta' in pergunta_lower:
-            return 50
-        elif 'top 100' in pergunta_lower or 'top100' in pergunta_lower or 'cem' in pergunta_lower:
+        # Números diretos - usar regex para evitar conflitos
+        import re
+        
+        # Verificar padrões específicos com regex para evitar conflitos
+        if re.search(r'\btop\s+100\b', pergunta_lower) or 'top100' in pergunta_lower or re.search(r'\bcem\b', pergunta_lower):
             return 100
+        elif re.search(r'\btop\s+50\b', pergunta_lower) or 'top50' in pergunta_lower or re.search(r'\bcinquenta\b', pergunta_lower):
+            return 50
+        elif re.search(r'\btop\s+25\b', pergunta_lower) or 'top25' in pergunta_lower or re.search(r'\bvinte e cinco\b', pergunta_lower):
+            return 25
+        elif re.search(r'\btop\s+20\b', pergunta_lower) or 'top20' in pergunta_lower or re.search(r'\bvinte\b', pergunta_lower):
+            return 20
+        elif re.search(r'\btop\s+15\b', pergunta_lower) or 'top15' in pergunta_lower or re.search(r'\bquinze\b', pergunta_lower):
+            return 15
+        elif re.search(r'\btop\s+10\b', pergunta_lower) or 'top10' in pergunta_lower or re.search(r'\bdez\b', pergunta_lower):
+            return 10
+        elif re.search(r'\btop\s+5\b', pergunta_lower) or 'top5' in pergunta_lower or re.search(r'\bcinco\b', pergunta_lower):
+            return 5
+        elif re.search(r'\btop\s+3\b', pergunta_lower) or 'top3' in pergunta_lower or re.search(r'\btrês\b', pergunta_lower) or re.search(r'\btres\b', pergunta_lower):
+            return 3
+        elif re.search(r'\btop\s+1\b', pergunta_lower) or 'top1' in pergunta_lower or re.search(r'\bprimeiro\b', pergunta_lower):
+            return 1
         
         # Buscar números na pergunta
         import re
@@ -931,12 +1299,14 @@ Resposta em português:""",
 
     def _get_cache_key(self, interpretacao: Dict[str, Any]) -> str:
         """Gera chave única para o cache baseada na interpretação."""
-        return f"{interpretacao['tipo']}_{interpretacao['quantidade']}_{interpretacao['formato_tabela']}"
+        pergunta = interpretacao.get('pergunta_original', '')
+        colecoes = interpretacao.get('colecoes_especificas', [])
+        return f"{interpretacao['tipo']}_{interpretacao['quantidade']}_{interpretacao['formato_tabela']}_{hash(pergunta)}_{hash(str(colecoes))}"
     
     def _get_from_cache(self, cache_key: str) -> Optional[str]:
         """Recupera resultado do cache."""
         if cache_key in self.cache_consultas:
-            print(f"🚀 Cache hit: {cache_key}")
+            print(f" Cache hit: {cache_key}")
             return self.cache_consultas[cache_key]
         return None
     
@@ -949,7 +1319,7 @@ Resposta em português:""",
             del self.cache_consultas[oldest_key]
         
         self.cache_consultas[cache_key] = resultado
-        print(f"💾 Cache saved: {cache_key}")
+        print(f" Cache saved: {cache_key}")
 
     def _fazer_consulta_inteligente(self, interpretacao: Dict[str, Any]) -> Optional[str]:
         """
@@ -964,7 +1334,32 @@ Resposta em português:""",
             if resultado_cache:
                 return resultado_cache
             
-            # Detectar coleção relevante
+            tipo = interpretacao['tipo']
+            quantidade = interpretacao['quantidade']
+            formato_tabela = interpretacao['formato_tabela']
+            
+            # Se for pergunta sobre listar coleções, usar função específica
+            if tipo == 'listar_colecoes':
+                resultado = self._listar_colecoes_disponiveis()
+                if resultado:
+                    self._save_to_cache(cache_key, resultado)
+                    return resultado
+            
+            # Se for pergunta sobre inconsistências, usar função específica
+            elif tipo == 'inconsistencia':
+                resultado = self._analisar_inconsistencias()
+                if resultado:
+                    self._save_to_cache(cache_key, resultado)
+                    return resultado
+            
+            # Se for pergunta sobre análise de fraude, executar análise completa
+            elif tipo == 'analise_fraude':
+                resultado = self._executar_analise_fraude()
+                if resultado:
+                    self._save_to_cache(cache_key, resultado)
+                    return resultado
+            
+            # Detectar coleção relevante para outros tipos de consulta
             pergunta = interpretacao.get('pergunta_original', '')
             colecao_nome = self._detectar_colecao_relevante(pergunta)
             if not colecao_nome:
@@ -972,16 +1367,30 @@ Resposta em português:""",
             
             colecao = self.db[colecao_nome]
             
-            tipo = interpretacao['tipo']
-            quantidade = interpretacao['quantidade']
-            formato_tabela = interpretacao['formato_tabela']
-            
-            # Se for pergunta sobre inconsistências, usar função específica
-            if tipo == 'inconsistencia':
-                resultado = self._analisar_inconsistencias()
+            # Se for consulta por data específica
+            if tipo == 'consulta_data_especifica':
+                resultado = self._consultar_por_data_especifica(pergunta)
                 if resultado:
                     self._save_to_cache(cache_key, resultado)
                     return resultado
+            
+            # Se for consulta por período de datas
+            if tipo == 'consulta_periodo_datas':
+                resultado = self._consultar_por_periodo_datas(pergunta)
+                if resultado:
+                    self._save_to_cache(cache_key, resultado)
+                    return resultado
+            
+            # Se for consulta de ranking, usar consulta direta
+            if tipo == 'ranking':
+                print(f" Tipo 'ranking' detectado - executando consulta direta para: {pergunta}")
+                resultado = self._fazer_consulta_direta(pergunta)
+                if resultado:
+                    print(f" Consulta direta retornou resultado: {resultado[:100]}...")
+                    self._save_to_cache(cache_key, resultado)
+                    return resultado
+                else:
+                    print(f" Consulta direta não retornou resultado")
             
             if tipo == 'top_sku':
                 pipeline = [
@@ -1097,7 +1506,7 @@ Resposta em português:""",
             return None
             
         except Exception as e:
-            print(f"❌ Erro na consulta inteligente: {e}")
+            print(f" Erro na consulta inteligente: {e}")
             return None
 
     def perguntar(self, pergunta: str) -> Dict[str, Any]:
@@ -1114,17 +1523,17 @@ Resposta em português:""",
             raise ValueError("Agente não foi criado. Execute criar_agente() primeiro.")
         
         try:
-            print(f"🤔 Pergunta: {pergunta}")
+            print(f" Pergunta: {pergunta}")
             
             # Interpretar a pergunta de forma inteligente
             interpretacao = self._interpretar_pergunta(pergunta)
-            print(f"🧠 Interpretação: {interpretacao}")
+            print(f" Interpretação: {interpretacao}")
             
             # Se conseguiu interpretar, fazer consulta direta específica
             if interpretacao['tipo']:
                 resultado_direto = self._fazer_consulta_inteligente(interpretacao)
                 if resultado_direto:
-                    print(f"💬 Resposta (consulta inteligente): {resultado_direto}")
+                    print(f" Resposta (consulta inteligente): {resultado_direto}")
                     return {
                         "pergunta": pergunta,
                         "resposta": resultado_direto,
@@ -1134,7 +1543,7 @@ Resposta em português:""",
             # Fallback: tentar consulta direta tradicional
             resposta_direta = self._fazer_consulta_direta(pergunta)
             if resposta_direta:
-                print(f"💬 Resposta (consulta direta): {resposta_direta}")
+                print(f" Resposta (consulta direta): {resposta_direta}")
                 return {
                     "pergunta": pergunta,
                     "resposta": resposta_direta,
@@ -1147,7 +1556,7 @@ Resposta em português:""",
             resposta = resultado["answer"]
             documentos_fonte = resultado.get("source_documents", [])
             
-            print(f"💬 Resposta: {resposta}")
+            print(f" Resposta: {resposta}")
             
             return {
                 "pergunta": pergunta,
@@ -1163,7 +1572,7 @@ Resposta em português:""",
             }
             
         except Exception as e:
-            print(f"❌ Erro ao processar pergunta: {e}")
+            print(f" Erro ao processar pergunta: {e}")
             return {
                 "pergunta": pergunta,
                 "resposta": f"Erro ao processar pergunta: {str(e)}",
@@ -1191,7 +1600,7 @@ if __name__ == "__main__":
     
     try:
         # Criar agente
-        print("🚀 Iniciando agente MongoDB...")
+        print(" Iniciando agente MongoDB...")
         agente = criar_agente_mongodb()
         
         # Exemplos de perguntas
@@ -1207,9 +1616,9 @@ if __name__ == "__main__":
         print("="*50)
         
         for pergunta in perguntas_exemplo:
-            print(f"\n📝 Testando pergunta: {pergunta}")
+            print(f"\n Testando pergunta: {pergunta}")
             resultado = agente.perguntar(pergunta)
-            print(f"✅ Resposta: {resultado['resposta']}")
+            print(f" Resposta: {resultado['resposta']}")
             print("-" * 30)
         
         # Loop interativo
@@ -1218,19 +1627,19 @@ if __name__ == "__main__":
         print("="*50)
         
         while True:
-            pergunta_usuario = input("\n🤔 Sua pergunta: ").strip()
+            pergunta_usuario = input("\n Sua pergunta: ").strip()
             
             if pergunta_usuario.lower() in ['sair', 'exit', 'quit']:
-                print("👋 Encerrando agente...")
+                print(" Encerrando agente...")
                 break
                 
             if pergunta_usuario:
                 resultado = agente.perguntar(pergunta_usuario)
-                print(f"💬 Resposta: {resultado['resposta']}")
+                print(f" Resposta: {resultado['resposta']}")
     
     except Exception as e:
-        print(f"❌ Erro: {e}")
-        print("💡 Verifique se:")
+        print(f" Erro: {e}")
+        print(" Verifique se:")
         print("   1. MongoDB está rodando localmente")
         print("   2. OPENAI_API_KEY está configurada")
         print("   3. Existem dados no banco 'grupo_oscar'")

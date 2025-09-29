@@ -3,7 +3,7 @@
 Sistema de Análise Inteligente de Dados - Grupo Oscar
 Aplicação Flask principal para gerenciamento de dados com IA
 """
-from flask import Flask, request, render_template, redirect, url_for, flash, jsonify
+from flask import Flask, request, render_template, redirect, url_for, flash, jsonify, send_file
 from pymongo import MongoClient
 from bson import ObjectId
 import sys
@@ -250,6 +250,52 @@ def carregar_sessao(sessao_id):
         return jsonify(mensagens)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+@app.route("/download-excel-fraude", methods=["GET", "POST"])
+def download_excel_fraude():
+    """Endpoint para download do relatório de fraude em Excel"""
+    try:
+        # Verificar se o agente está disponível
+        agent = get_mongodb_agent()
+        if not agent:
+            return jsonify({
+                "error": "Agente não disponível. Verifique se o MongoDB está rodando e se a OPENAI_API_KEY está configurada."
+            }), 500
+        
+        # Verificar se o detector de fraude está disponível
+        if not agent.detector_fraude:
+            return jsonify({
+                "error": "Detector de fraude não foi inicializado corretamente."
+            }), 500
+        
+        print("📊 Gerando relatório de fraude para Excel...")
+        
+        # Executar análise completa de fraude
+        relatorio = agent.detector_fraude.executar_analise_completa_fraude()
+        
+        # Gerar Excel
+        excel_buffer = agent.detector_fraude.gerar_excel_relatorio_fraude(relatorio)
+        
+        # Nome do arquivo com timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"relatorio_fraude_{timestamp}.xlsx"
+        
+        print(f"✅ Excel gerado com sucesso: {filename}")
+        
+        # Retornar arquivo para download
+        return send_file(
+            excel_buffer,
+            as_attachment=True,
+            download_name=filename,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+        
+    except Exception as e:
+        print(f"❌ Erro no download do Excel: {e}")
+        return jsonify({
+            "error": f"Erro interno: {str(e)}"
+        }), 500
 
 
 if __name__ == "__main__":
