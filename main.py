@@ -9,6 +9,8 @@ from bson import ObjectId
 import sys
 import os
 import tempfile
+import re
+import tempfile
 from datetime import datetime
 
 # Adiciona o backend ao path do Python
@@ -37,9 +39,7 @@ sessao_atual = None
 historico_atual = []
 
 def get_mongodb_agent():
-    """
-    Obtém ou cria o agente MongoDB para consultas com IA
-    """
+    """Obtém ou cria o agente MongoDB para consultas com IA"""
     global mongodb_agent
     if mongodb_agent is None:
         try:
@@ -134,6 +134,10 @@ def importar():
 
     return redirect(url_for("index"))
 
+import re
+from datetime import datetime, time as dt_time
+import re
+from datetime import datetime, time as dt_time
 
 @app.route("/colecao/<nome>")
 def ver_colecao(nome):
@@ -141,19 +145,134 @@ def ver_colecao(nome):
     per_page = int(request.args.get("per_page", 20))
     skip = (page - 1) * per_page
 
-    try:
-        total_docs = db[nome].count_documents({})
-        docs = list(db[nome].find().skip(skip).limit(per_page))
+    # parâmetros do formulário (campo único de data)
+    data_str = request.args.get("data", "").strip()   # aceita YYYY-MM-DD (input date) ou DD/MM/YYYY
+    loja_input = request.args.get("loja", "").strip()
+    sku_input = request.args.get("sku", "").strip()
 
+    try:
+        # pega um documento de exemplo para mapear nomes de campos reais
+        sample = db[nome].find_one()
+        if not sample:
+            return render_template(
+                "colecao.html",
+                nome=nome,
+                docs=[],
+                colunas=[],
+                page=page,
+                per_page=per_page,
+                total_pages=0,
+                data=data_str,
+                loja=loja_input,
+                sku=sku_input,
+            )
+
+        # mapeia keys por lowercase -> real key
+        key_map = {k.lower(): k for k in sample.keys()}
+
+        # detectar colunas que contenham 'data' (case-insensitive)
+        date_fields = [k for k in sample.keys() if "data" in k.lower()]
+
+        filters = []
+
+        # --- FILTRO POR DATA (única data)
+        if data_str and date_fields:
+            # tentar interpretar input em diferentes formatos
+            parsed_date = None
+            # tenta ISO (YYYY-MM-DD)
+            try:
+                parsed_date = datetime.strptime(data_str, "%Y-%m-%d")
+            except Exception:
+                # tenta DD/MM/YYYY
+                try:
+                    parsed_date = datetime.strptime(data_str, "%d/%m/%Y")
+                except Exception:
+                    # ultima tentativa: dateutil parser, se quiser
+                    try:
+                        from dateutil import parser
+                        parsed_date = parser.parse(data_str, dayfirst=True)
+                    except Exception:
+                        parsed_date = None
+
+            # se conseguiu parse -> construir filtros
+            or_clauses = []
+            if parsed_date:
+                dt_start = datetime.combine(parsed_date.date(), dt_time.min)
+                dt_end = datetime.combine(parsed_date.date(), dt_time.max)
+                for f in date_fields:
+                    example_val = sample.get(f)
+                    if isinstance(example_val, datetime):
+                        # campo datetime no Mongo: busca por intervalo do dia
+                        or_clauses.append({f: {"$gte": dt_start, "$lte": dt_end}})
+                    else:
+                        # campo string: checar formato do exemplo e comparar string formatada
+                        sval = str(example_val) if example_val is not None else ""
+                        # se exemplo contém '/', supomos dd/mm/YYYY
+                        candidates = []
+                        if "/" in sval:
+                            candidates.append(parsed_date.strftime("%d/%m/%Y"))
+                        # se exemplo contém '-', supomos YYYY-MM-DD
+                        if "-" in sval:
+                            candidates.append(parsed_date.strftime("%Y-%m-%d"))
+                        # sempre tente também ambas representações
+                        candidates.append(parsed_date.strftime("%d/%m/%Y"))
+                        candidates.append(parsed_date.strftime("%Y-%m-%d"))
+
+                        # criar regex que bate qualquer das representações exatas
+                        regex_parts = [re.escape(c) for c in dict.fromkeys(candidates) if c]
+                        if regex_parts:
+                            pattern = r"^(?:" + "|".join(regex_parts) + r")$"
+                            or_clauses.append({f: {"$regex": pattern}})
+                if or_clauses:
+                    filters.append({"$or": or_clauses})
+            else:
+                # não conseguiu parse da data de input -> tenta filtro por texto exato em campos string
+                or_clauses = []
+                for f in date_fields:
+                    or_clauses.append({f: {"$regex": f"^{re.escape(data_str)}$", "$options": "i"}})
+                if or_clauses:
+                    filters.append({"$or": or_clauses})
+
+        # --- FILTRO LOJA (procura campo 'loja' exato, case-insensitive)
+        loja_field = None
+        for k in sample.keys():
+            if "loja" == k.lower() or "loja" in k.lower():
+                loja_field = k
+                break
+        if loja_input and loja_field:
+            # usar regex para case-insensitive, permitir espaços/trimming
+            filters.append({loja_field: {"$regex": f"^{re.escape(loja_input.strip())}$", "$options": "i"}})
+
+        # --- FILTRO SKU
+        sku_field = None
+        for k in sample.keys():
+            if k.lower() == "sku" or "sku" in k.lower():
+                sku_field = k
+                break
+        if sku_input and sku_field:
+            filters.append({sku_field: {"$regex": f"^{re.escape(sku_input.strip())}$", "$options": "i"}})
+
+        # compor query final
+        if len(filters) == 0:
+            query = {}
+        elif len(filters) == 1:
+            query = filters[0]
+        else:
+            query = {"$and": filters}
+
+        # consulta com paginação
+        total_docs = db[nome].count_documents(query)
+        docs = list(db[nome].find(query).skip(skip).limit(per_page))
+
+        # normalizar docs para template e remover _hash
         for documento in docs:
             if "_id" in documento and isinstance(documento["_id"], ObjectId):
                 documento["_id"] = str(documento["_id"])
-
-        colunas = sorted({key for doc in docs for key in doc.keys() if key != "_hash"})
-        for documento in docs:
             documento.pop("_hash", None)
 
-        
+        # colunas baseadas nas chaves dos docs retornados (sem _hash)
+        colunas = sorted({k for doc in docs for k in doc.keys() if k != "_hash"})
+
         total_pages = (total_docs + per_page - 1) // per_page
 
         return render_template(
@@ -164,7 +283,11 @@ def ver_colecao(nome):
             page=page,
             per_page=per_page,
             total_pages=total_pages,
+            data=data_str,
+            loja=loja_input,
+            sku=sku_input,
         )
+
     except Exception as e:
         flash(f"Erro ao acessar coleção: {e}")
         return redirect(url_for("index"))

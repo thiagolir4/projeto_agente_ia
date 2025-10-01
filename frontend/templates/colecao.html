@@ -17,6 +17,26 @@
       </div>
     </div>
 
+  <form method="get" action="{{ url_for('ver_colecao', nome=nome) }}" class="row g-3 mb-4">
+        <div class="col-md-2">
+            <label for="data" class="form-label">Data</label>
+            <input type="date" id="data" name="data" class="form-control" value="{{ data }}">
+        </div>
+        <div class="col-md-1">
+            <label for="loja" class="form-label">Loja</label>
+            <input type="text" id="loja" name="loja" value="{{ loja }}" class="form-control" placeholder="Ex: SP001">
+        </div>
+        <div class="col-md-3">
+            <label for="sku" class="form-label">SKU</label>
+            <input type="text" id="sku" name="sku" value="{{ sku }}" class="form-control" placeholder="Ex: 123456">
+        </div>
+        <div class="col-md-12">
+            <button type="submit" class="btn btn-primary">Buscar</button>
+            <a href="{{ url_for('ver_colecao', nome=nome) }}" class="btn btn-secondary">Limpar</a>
+        </div>
+    </form>
+
+
   <table class="table table-bordered table-hover table-sm">
     <thead class="table-light">
       <tr>

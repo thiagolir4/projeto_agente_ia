@@ -3,6 +3,7 @@ from io import StringIO
 import pandas as pd
 import re
 from urllib.parse import urlparse, parse_qs
+from datetime import datetime
 
 
 def corrigir_encoding_dataframe(df):
@@ -122,3 +123,39 @@ def carregar_csv(caminho_csv):
         nome_colecao = caminho_csv.split("/")[-1].replace(".csv", "")
 
     return df, nome_colecao
+
+# -*- coding: utf-8 -*-
+"""
+Normalizador de DataFrames antes de inserção no MongoDB
+"""
+
+
+def normalizar_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Normaliza os dados do DataFrame:
+      - Converte colunas que contenham 'data' no nome para datetime.
+      - Remove espaços extras dos nomes das colunas.
+      - Remove linhas completamente vazias.
+    """
+    # Limpar nomes de colunas
+    df.columns = [col.strip().upper() for col in df.columns]
+
+    # Remover linhas totalmente vazias
+    df = df.dropna(how="all")
+
+    # Converter colunas que contenham "DATA" no nome
+    for col in df.columns:
+        if "DATA" in col.upper():
+            try:
+                df[col] = pd.to_datetime(
+                    df[col],
+                    format="%d/%m/%Y",
+                    errors="coerce"  # valores inválidos viram NaT
+                )
+            except Exception:
+                pass  # mantém original caso não seja conversível
+
+    # Remover linhas onde todas as colunas de data são NaT
+    df = df.dropna(how="all")
+
+    return df
