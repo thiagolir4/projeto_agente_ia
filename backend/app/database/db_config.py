@@ -7,7 +7,7 @@ load_dotenv()
 
 # Configurações do MongoDB
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
-DB_NAME = os.getenv("DB_NAME", "dbGrupoOscar")
+DB_NAME = os.getenv("DB_NAME", "db_analytics")
 
 # Configurações da OpenAI
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")

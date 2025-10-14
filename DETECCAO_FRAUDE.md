@@ -144,10 +144,10 @@ from modules.detector_fraude import DetectorFraude
 
 # Conectar ao MongoDB
 client = MongoClient("mongodb://localhost:27017/")
-db = client["dbGrupoOscar"]
+db = client["db_analytics"]
 
 # Criar detector
-detector = DetectorFraude(client, "dbGrupoOscar")
+detector = DetectorFraude(client, "db_analytics")
 ```
 
 ### Execução de Análise Completa
@@ -312,4 +312,4 @@ Para dúvidas técnicas ou problemas com o sistema de detecção de fraude:
 
 ## 📄 Licença
 
-Este sistema de detecção de fraude é parte do projeto Grupo Oscar e segue as mesmas diretrizes de licenciamento do projeto principal.
+Este sistema de detecção de fraude segue as mesmas diretrizes de licenciamento do projeto principal.

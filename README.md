@@ -58,7 +58,7 @@ Crie um arquivo chamado `.env` na pasta principal do projeto com o seguinte cont
 ```
 OPENAI_API_KEY=sua_chave_openai_aqui
 MONGO_URI=mongodb://localhost:27017/
-DB_NAME=dbGrupoOscar
+DB_NAME=db_analytics
 ```
 
 ### 4. 🍃 Inicie o MongoDB

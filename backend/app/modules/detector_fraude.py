@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Módulo de Detecção de Fraude - Grupo Oscar
+Módulo de Detecção de Fraude
 Implementa algoritmos para identificar indícios de fraude em dados de vendas, devoluções e ajustes.
 """
 
@@ -711,7 +711,7 @@ class DetectorFraude:
             
             # Cabeçalho principal
             ws.merge_cells(f'A{row}:F{row}')
-            ws[f'A{row}'] = "RELATÓRIO DE ANÁLISE DE FRAUDE - GRUPO OSCAR"
+            ws[f'A{row}'] = "RELATÓRIO DE ANÁLISE DE FRAUDE"
             ws[f'A{row}'].font = header_font
             ws[f'A{row}'].fill = header_fill
             ws[f'A{row}'].alignment = center_alignment

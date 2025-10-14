@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Sistema de Análise Inteligente de Dados - Grupo Oscar
+Sistema de Análise Inteligente de Dados
 Aplicação Flask principal para gerenciamento de dados com IA
 """
 from flask import Flask, request, render_template, redirect, url_for, flash, jsonify, send_file
@@ -43,7 +43,7 @@ def get_mongodb_agent():
     global mongodb_agent
     if mongodb_agent is None:
         try:
-            print("🤖 Inicializando agente MongoDB...")
+            print("Inicializando agente MongoDB...")
             mongodb_agent = MongoDBAgent(
                 mongo_uri=db_config.MONGO_URI,
                 database_name=db_config.DB_NAME
@@ -392,7 +392,7 @@ def download_excel_fraude():
                 "error": "Detector de fraude não foi inicializado corretamente."
             }), 500
         
-        print("📊 Gerando relatório de fraude para Excel...")
+        print("Gerando relatório de fraude para Excel...")
         
         # Executar análise completa de fraude
         relatorio = agent.detector_fraude.executar_analise_completa_fraude()
@@ -404,7 +404,7 @@ def download_excel_fraude():
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"relatorio_fraude_{timestamp}.xlsx"
         
-        print(f"✅ Excel gerado com sucesso: {filename}")
+        print(f"Excel gerado com sucesso: {filename}")
         
         # Retornar arquivo para download
         return send_file(
@@ -415,7 +415,7 @@ def download_excel_fraude():
         )
         
     except Exception as e:
-        print(f"❌ Erro no download do Excel: {e}")
+        print(f"Erro no download do Excel: {e}")
         return jsonify({
             "error": f"Erro interno: {str(e)}"
         }), 500
@@ -428,6 +428,16 @@ if __name__ == "__main__":
     
     print("Inicializando histórico de conversas...")
     inicializar_historico()
+    
+    print("Inicializando agente MongoDB...")
+    try:
+        agent = get_mongodb_agent()
+        if agent:
+            print("Agente MongoDB inicializado com sucesso!")
+        else:
+            print("Falha ao inicializar agente MongoDB")
+    except Exception as e:
+        print(f"Erro ao inicializar agente: {e}")
     
     print("Acesse: http://localhost:5000")
     

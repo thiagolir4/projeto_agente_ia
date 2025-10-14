@@ -38,10 +38,10 @@ class GerenciadorHistorico:
             self.colecao_historico.create_index("sessao_id")
             self.colecao_historico.create_index("timestamp")
             
-            print("✅ Conectado ao MongoDB para histórico de conversas")
+            print("Conectado ao MongoDB para histórico de conversas")
             
         except Exception as e:
-            print(f"❌ Erro ao conectar para histórico: {e}")
+            print(f"Erro ao conectar para histórico: {e}")
             raise
     
     def gerar_id_sessao(self) -> str:
@@ -77,10 +77,10 @@ class GerenciadorHistorico:
         
         try:
             resultado = self.colecao_historico.insert_one(mensagem)
-            print(f"💾 Mensagem salva: {tipo} - {conteudo[:50]}...")
+            print(f"Mensagem salva: {tipo} - {conteudo[:50]}...")
             return str(resultado.inserted_id)
         except Exception as e:
-            print(f"❌ Erro ao salvar mensagem: {e}")
+            print(f"Erro ao salvar mensagem: {e}")
             return None
     
     def carregar_historico_sessao(self, sessao_id: str) -> List[Dict[str, Any]]:
@@ -111,11 +111,11 @@ class GerenciadorHistorico:
                 if 'criado_em' in msg and isinstance(msg['criado_em'], datetime):
                     msg['criado_em'] = msg['criado_em'].isoformat()
             
-            print(f"📚 Carregadas {len(mensagens)} mensagens da sessão {sessao_id}")
+            print(f"Carregadas {len(mensagens)} mensagens da sessão {sessao_id}")
             return mensagens
             
         except Exception as e:
-            print(f"❌ Erro ao carregar histórico: {e}")
+            print(f"Erro ao carregar histórico: {e}")
             return []
     
     def carregar_ultima_sessao(self) -> tuple:
@@ -145,7 +145,7 @@ class GerenciadorHistorico:
                 return nova_sessao, []
                 
         except Exception as e:
-            print(f"❌ Erro ao carregar última sessão: {e}")
+            print(f"Erro ao carregar última sessão: {e}")
             return self.gerar_id_sessao(), []
     
     def listar_sessoes(self) -> List[Dict[str, Any]]:
@@ -185,7 +185,7 @@ class GerenciadorHistorico:
             return sessoes
             
         except Exception as e:
-            print(f"❌ Erro ao listar sessões: {e}")
+            print(f"Erro ao listar sessões: {e}")
             return []
     
     def limpar_historico_sessao(self, sessao_id: str) -> bool:
@@ -203,10 +203,10 @@ class GerenciadorHistorico:
         
         try:
             resultado = self.colecao_historico.delete_many({"sessao_id": sessao_id})
-            print(f"🗑️ Removidas {resultado.deleted_count} mensagens da sessão {sessao_id}")
+            print(f"Removidas {resultado.deleted_count} mensagens da sessão {sessao_id}")
             return True
         except Exception as e:
-            print(f"❌ Erro ao limpar histórico: {e}")
+            print(f"Erro ao limpar histórico: {e}")
             return False
     
     def limpar_todo_historico(self) -> bool:
@@ -221,10 +221,10 @@ class GerenciadorHistorico:
         
         try:
             resultado = self.colecao_historico.delete_many({})
-            print(f"🗑️ Removidas {resultado.deleted_count} mensagens de todo o histórico")
+            print(f"Removidas {resultado.deleted_count} mensagens de todo o histórico")
             return True
         except Exception as e:
-            print(f"❌ Erro ao limpar todo histórico: {e}")
+            print(f"Erro ao limpar todo histórico: {e}")
             return False
     
     def obter_estatisticas(self) -> Dict[str, Any]:
@@ -253,7 +253,7 @@ class GerenciadorHistorico:
                 "mensagens_por_tipo": mensagens_por_tipo
             }
         except Exception as e:
-            print(f"❌ Erro ao obter estatísticas: {e}")
+            print(f"Erro ao obter estatísticas: {e}")
             return {}
 
 

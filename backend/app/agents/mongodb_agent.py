@@ -21,7 +21,7 @@ from modules.detector_fraude import DetectorFraude
 class MongoDBAgent:
     """Agente de IA que consulta dados do MongoDB local usando LangChain."""
     
-    def __init__(self, mongo_uri: str = "mongodb://localhost:27017/", database_name: str = "dbGrupoOscar"):
+    def __init__(self, mongo_uri: str = "mongodb://localhost:27017/", database_name: str = "db_analytics"):
         """
         Inicializa o agente MongoDB.
         
@@ -1642,4 +1642,4 @@ if __name__ == "__main__":
         print(" Verifique se:")
         print("   1. MongoDB está rodando localmente")
         print("   2. OPENAI_API_KEY está configurada")
-        print("   3. Existem dados no banco 'grupo_oscar'")
+        print("   3. Existem dados no banco de dados")
